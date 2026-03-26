@@ -10,10 +10,9 @@ from aiogram.enums import ParseMode
 
 from svgmaker_proxy.api.app import (
     create_app,
-    initialize_services,
     run_account_pool_refill_loop,
 )
-from svgmaker_proxy.bootstrap import build_services
+from svgmaker_proxy.bootstrap import build_services, initialize_services
 from svgmaker_proxy.core.config import get_settings
 from svgmaker_proxy.core.logging import configure_logging
 from svgmaker_proxy.telegram.app import build_bot_service, configure_dispatcher
@@ -51,25 +50,26 @@ async def run_stack() -> None:
         name="svgmaker-pool-refill",
     )
 
-    try:
-        done, _ = await asyncio.wait(
-            {api_task, bot_task, refill_task},
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        for task in done:
-            exc = task.exception()
-            if exc is not None:
-                raise exc
-    finally:
-        server.should_exit = True
-        for task in (api_task, bot_task, refill_task):
-            if not task.done():
-                task.cancel()
-        for task in (api_task, bot_task, refill_task):
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        await bot.session.close()
-        await services.database.dispose()
+    async with app.state.mcp_server.session_manager.run():
+        try:
+            done, _ = await asyncio.wait(
+                {api_task, bot_task, refill_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in done:
+                exc = task.exception()
+                if exc is not None:
+                    raise exc
+        finally:
+            server.should_exit = True
+            for task in (api_task, bot_task, refill_task):
+                if not task.done():
+                    task.cancel()
+            for task in (api_task, bot_task, refill_task):
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            await bot.session.close()
+            await services.database.dispose()
 
 
 def main() -> None:

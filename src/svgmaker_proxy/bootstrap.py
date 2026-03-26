@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from svgmaker_proxy.clients.firebase_identity import FirebaseIdentityClient
@@ -15,6 +16,8 @@ from svgmaker_proxy.storage.db import Database
 from svgmaker_proxy.storage.generation_repository import GenerationRepository
 from svgmaker_proxy.storage.telegram_invite_code_repository import TelegramInviteCodeRepository
 from svgmaker_proxy.storage.telegram_user_repository import TelegramUserRepository
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -72,4 +75,14 @@ def build_services() -> ServiceContainer:
         account_registrar=account_registrar,
         account_pool=account_pool,
         generation_proxy=generation_proxy,
+    )
+
+
+async def initialize_services(services: ServiceContainer) -> None:
+    await services.database.initialize()
+    gmail_profile = await services.account_registrar.gmail_service.healthcheck()
+    logger.info(
+        "Gmail healthcheck passed for %s (messages=%s)",
+        gmail_profile["email_address"],
+        gmail_profile.get("messages_total"),
     )

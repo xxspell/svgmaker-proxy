@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     api_host: str = Field(default="0.0.0.0", alias="SVGM_PROXY_HOST")
     api_port: int = Field(default=8000, alias="SVGM_PROXY_PORT")
+    mcp_mount_path: str = Field(default="/mcp", alias="SVGM_PROXY_MCP_PATH")
 
     database_url: str = Field(
         default=(

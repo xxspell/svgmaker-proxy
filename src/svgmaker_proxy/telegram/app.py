@@ -12,8 +12,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from svgmaker_proxy.api.app import initialize_services
-from svgmaker_proxy.bootstrap import ServiceContainer, build_services
+from svgmaker_proxy.bootstrap import ServiceContainer, build_services, initialize_services
 from svgmaker_proxy.core.config import get_settings
 from svgmaker_proxy.core.logging import configure_logging
 from svgmaker_proxy.telegram.service import TelegramBotError, TelegramBotService

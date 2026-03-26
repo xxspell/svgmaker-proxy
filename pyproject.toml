@@ -14,6 +14,7 @@ dependencies = [
   "fastapi>=0.116.0",
   "greenlet>=3.3.2",
   "httpx>=0.28.0",
+  "mcp[cli]",
   "pydantic>=2.11.0",
   "pydantic-settings>=2.10.0",
   "python-dotenv>=1.1.0",
@@ -24,6 +25,7 @@ dependencies = [
 ]
 
 [project.scripts]
+svgmaker-proxy-mcp = "svgmaker_proxy.mcp.server:main"
 svgmaker-proxy-stack = "svgmaker_proxy.stack:main"
 svgmaker-proxy-telegram-bot = "svgmaker_proxy.telegram.app:main"
 svgmaker-proxy-create-invite = "svgmaker_proxy.telegram.create_invite:main"

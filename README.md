@@ -112,6 +112,96 @@ The invite command prints a deep-link payload that can be used with:
 https://t.me/<your_bot_username>?start=<invite_code>
 ```
 
+## MCP Server
+
+The repository also contains a private MCP server intended for AI tools and IDE integrations.
+
+Design goals:
+
+- expose only SVG generation
+- hide account rotation, retries, pool refill, and balance logic
+- reuse the same local proxy services instead of the official SVGMaker API key flow
+
+Current MCP tools:
+
+- `svgmaker_generate`
+- `svgmaker_generate_link`
+
+`svgmaker_generate` accepts:
+
+- `prompt`
+- `quality`
+- `aspect_ratio`
+- `background`
+
+It returns:
+
+- `generation_id`
+- `svg_url`
+- `svg_text`
+
+`svgmaker_generate_link` accepts:
+
+- `prompt`
+- `quality`
+- `aspect_ratio`
+- `background`
+
+It returns only lightweight fields:
+
+- `generation_id`
+- `svg_url`
+
+Recommendation:
+
+- use `svgmaker_generate_link` for remote HTTP MCP clients
+- use `svgmaker_generate` when you need raw `svg_text`
+
+Run the MCP server over stdio:
+
+```bash
+uv run svgmaker-proxy-mcp
+```
+
+For server deployments, the FastAPI app also mounts the MCP endpoint over HTTP at:
+
+```text
+/mcp
+```
+
+That means when your API is running on `https://your-domain.example`, the MCP endpoint is:
+
+```text
+https://your-domain.example/mcp
+```
+
+Example local stdio MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "svgmaker-proxy": {
+      "command": "uv",
+      "args": ["run", "svgmaker-proxy-mcp"],
+      "transport": "stdio"
+    }
+  }
+}
+```
+
+Example remote HTTP MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "svgmaker-proxy": {
+      "transport": "streamable-http",
+      "url": "https://your-domain.example/mcp"
+    }
+  }
+}
+```
+
 Example generation request:
 
 ```bash

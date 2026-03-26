@@ -10,9 +10,10 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel, Field
 
 from svgmaker_proxy import __version__
-from svgmaker_proxy.bootstrap import ServiceContainer, build_services
+from svgmaker_proxy.bootstrap import ServiceContainer, build_services, initialize_services
 from svgmaker_proxy.core.config import get_settings
 from svgmaker_proxy.core.logging import configure_logging
+from svgmaker_proxy.mcp.server import create_mcp_server
 from svgmaker_proxy.models.account import AccountRecord
 from svgmaker_proxy.models.account_action import AccountActionRecord
 from svgmaker_proxy.models.generation import SvgmakerGenerateRequest
@@ -80,16 +81,6 @@ def get_services(request: Request) -> ServiceContainer:
     return request.app.state.services
 
 
-async def initialize_services(services: ServiceContainer) -> None:
-    await services.database.initialize()
-    gmail_profile = await services.account_registrar.gmail_service.healthcheck()
-    logger.info(
-        "Gmail healthcheck passed for %s (messages=%s)",
-        gmail_profile["email_address"],
-        gmail_profile.get("messages_total"),
-    )
-
-
 async def run_account_pool_refill_loop(services: ServiceContainer) -> None:
     settings = get_settings()
     interval = max(5.0, settings.pool_refill_interval_seconds)
@@ -103,18 +94,19 @@ async def run_account_pool_refill_loop(services: ServiceContainer) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    services = build_services()
+    services: ServiceContainer = app.state.services
+    mcp_server = app.state.mcp_server
     await initialize_services(services)
-    app.state.services = services
     refill_task = asyncio.create_task(run_account_pool_refill_loop(services))
-    try:
-        yield
-    finally:
-        if not refill_task.done():
-            refill_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await refill_task
-        await services.database.dispose()
+    async with mcp_server.session_manager.run():
+        try:
+            yield
+        finally:
+            if not refill_task.done():
+                refill_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await refill_task
+            await services.database.dispose()
 
 
 def create_app(
@@ -125,6 +117,10 @@ def create_app(
     settings = get_settings()
     configure_logging(settings.log_level)
 
+    services_for_app = services
+    if services_for_app is None:
+        services_for_app = build_services()
+
     lifespan_handler = lifespan if manage_lifecycle else None
     app = FastAPI(
         title=settings.app_name,
@@ -133,8 +129,14 @@ def create_app(
         redoc_url="/redoc",
         lifespan=lifespan_handler,
     )
-    if services is not None:
-        app.state.services = services
+    app.state.services = services_for_app
+    mounted_mcp = create_mcp_server(
+        services=services_for_app,
+        settings=settings,
+        streamable_http_path="/",
+    )
+    app.state.mcp_server = mounted_mcp
+    app.mount(settings.mcp_mount_path, mounted_mcp.streamable_http_app())
 
     @app.get("/health")
     async def healthcheck(request: Request) -> dict[str, Any]:
