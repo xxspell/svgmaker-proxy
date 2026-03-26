@@ -60,7 +60,11 @@ class GenerationRepository:
         return await self._fetch_many(statement)
 
     async def list_recent(self, limit: int = 100) -> list[GenerationRequestRecord]:
-        statement = select(GenerationRequestORM).order_by(GenerationRequestORM.id.desc()).limit(limit)
+        statement = (
+            select(GenerationRequestORM)
+            .order_by(GenerationRequestORM.id.desc())
+            .limit(limit)
+        )
         return await self._fetch_many(statement)
 
     async def update(

@@ -5,9 +5,11 @@ description = "Async account registrar, email verifier, and round-robin proxy fo
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "aiogram>=3.21.0",
   "aiogoogle>=5.17.0",
   "alembic>=1.16.0",
   "asyncpg>=0.30.0",
+  "cairosvg>=2.8.2",
   "email-validator>=2.2.0",
   "fastapi>=0.116.0",
   "greenlet>=3.3.2",
@@ -20,6 +22,11 @@ dependencies = [
   "tenacity>=9.1.0",
   "uvicorn[standard]>=0.35.0",
 ]
+
+[project.scripts]
+svgmaker-proxy-stack = "svgmaker_proxy.stack:main"
+svgmaker-proxy-telegram-bot = "svgmaker_proxy.telegram.app:main"
+svgmaker-proxy-create-invite = "svgmaker_proxy.telegram.create_invite:main"
 
 [dependency-groups]
 dev = [

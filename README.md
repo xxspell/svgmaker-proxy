@@ -19,6 +19,7 @@ Async Python service for `svgmaker.io` with the following flow:
 - `AccountRegistrarService` for registration, email verification, and post-signup flow
 - `AccountPoolService` for round-robin leasing, refill, and account status updates
 - `GenerationProxyService` for generation through pooled accounts
+- direct Telegram bot integration that calls core services in-process instead of going through HTTP
 - `AccountActionRepository` and action logging for account-level audit history
 - FastAPI endpoints for registration, refill, account inspection, and generation proxying
 
@@ -60,12 +61,13 @@ Important details:
 1. acquire a ready account from the pool through round-robin
 2. verify that the account has a complete `AuthToken.*` session
 3. send `POST /api/generate`
-4. read the SSE stream until `complete`
-5. persist the generation request in PostgreSQL
-6. update account status:
+4. if `402 Payment Required` is returned, retry the generation with another account
+5. read the SSE stream until `complete`
+6. persist the generation request in PostgreSQL
+7. update account status:
    `failure_count=0` on success
    `cooling_down`, `blocked`, or `failed` on failure
-7. capture Firestore balance snapshots before and after generation
+8. capture Firestore balance snapshots before and after generation
 
 ## API
 
@@ -79,6 +81,36 @@ Important details:
 - `POST /generate` - generation proxy
 - `POST /proxy/generate` - alias for the generation proxy
 - `GET /generations/{request_id}` - inspect a persisted generation record
+
+## Telegram Bot
+
+The repository now also contains a Telegram bot that uses the same core services directly:
+
+- it does not call the local HTTP API
+- it uses the same `GenerationProxyService` and account pool in-process
+- it uses inline buttons for the main user flow
+
+Current bot rules:
+
+- a new user starts with `3` free generations
+- free generations do not accumulate
+- when the balance reaches `0`, the user receives `1` new generation on the next day
+- if the user still has any remaining generations, no daily refill is granted
+- a valid invite code can unlock unlimited generation access
+
+Available bot entrypoints:
+
+```bash
+uv run svgmaker-proxy-stack
+uv run svgmaker-proxy-telegram-bot
+uv run svgmaker-proxy-create-invite --description "VIP unlimited access"
+```
+
+The invite command prints a deep-link payload that can be used with:
+
+```text
+https://t.me/<your_bot_username>?start=<invite_code>
+```
 
 Example generation request:
 
@@ -136,6 +168,9 @@ SVGM_PROXY_TARGET_READY_ACCOUNTS=5
 SVGM_PROXY_MAX_CONCURRENT_REGISTRATIONS=2
 SVGM_PROXY_MAX_ACCOUNTS_TOTAL=50
 SVGM_PROXY_ACCOUNT_ERROR_LIMIT=3
+SVGM_PROXY_ACCOUNT_SELECTION_STRATEGY=round_robin
+SVGM_PROXY_POOL_REFILL_INTERVAL_SECONDS=60
+SVGM_PROXY_GENERATION_RETRY_ATTEMPTS=3
 
 SVGM_PROXY_REQUEST_TIMEOUT=60
 SVGM_PROXY_GENERATE_TIMEOUT=300
@@ -149,6 +184,10 @@ GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
 GMAIL_REFRESH_TOKEN=
 GMAIL_ACCESS_TOKEN=
+
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_INITIAL_GENERATIONS=3
+TELEGRAM_DAILY_GENERATIONS=1
 ```
 
 ## Setup And Run
@@ -178,6 +217,18 @@ Run the API:
 
 ```bash
 uv run uvicorn svgmaker_proxy.api.app:app --host 0.0.0.0 --port 8000
+```
+
+Run the Telegram bot:
+
+```bash
+uv run svgmaker-proxy-telegram-bot
+```
+
+Run API, Telegram bot, and background pool refill in one process:
+
+```bash
+uv run svgmaker-proxy-stack
 ```
 
 ## Validation

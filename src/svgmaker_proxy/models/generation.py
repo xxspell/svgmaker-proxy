@@ -44,6 +44,7 @@ class GenerationRequestCreate(BaseModel):
 
 
 class GenerationRequestUpdate(BaseModel):
+    account_id: int | None = None
     external_generation_id: str | None = None
     status: GenerationStatus | None = None
     credit_cost: int | None = None

@@ -83,6 +83,24 @@ class Settings(BaseSettings):
             "SVGM_ACCOUNT_ERROR_LIMIT",
         ),
     )
+    account_selection_strategy: Literal["round_robin"] = Field(
+        default="round_robin",
+        alias="SVGM_PROXY_ACCOUNT_SELECTION_STRATEGY",
+    )
+    pool_refill_interval_seconds: float = Field(
+        default=60.0,
+        validation_alias=AliasChoices(
+            "SVGM_PROXY_POOL_REFILL_INTERVAL_SECONDS",
+            "SVGM_POOL_REFILL_INTERVAL_SECONDS",
+        ),
+    )
+    generation_retry_attempts: int = Field(
+        default=3,
+        validation_alias=AliasChoices(
+            "SVGM_PROXY_GENERATION_RETRY_ATTEMPTS",
+            "SVGM_GENERATION_RETRY_ATTEMPTS",
+        ),
+    )
 
     generate_quality_default: str = Field(default="high", alias="SVGM_DEFAULT_QUALITY")
     generate_aspect_ratio_default: str = Field(
@@ -138,6 +156,14 @@ class Settings(BaseSettings):
             "SVGM_PROXY_VERIFY_EMAIL_MAX_ATTEMPTS",
             "VERIFY_EMAIL_MAX_ATTEMPTS",
         ),
+    )
+
+    telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
+    telegram_initial_generations: int = Field(default=3, alias="TELEGRAM_INITIAL_GENERATIONS")
+    telegram_daily_generations: int = Field(default=1, alias="TELEGRAM_DAILY_GENERATIONS")
+    telegram_welcome_generate_button: str = Field(
+        default="Generate image",
+        alias="TELEGRAM_BUTTON_GENERATE",
     )
 
     svgmaker_origin: str = Field(default="https://svgmaker.io", alias="SVGM_ORIGIN")

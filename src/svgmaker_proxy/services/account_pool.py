@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import cycle
@@ -42,12 +43,16 @@ class AccountPoolService:
     async def list_active_accounts(self) -> list[AccountRecord]:
         return await self.account_repository.list_ready()
 
-    async def acquire_account(self) -> AccountLease:
+    async def acquire_account(
+        self,
+        exclude_account_ids: Iterable[int] | None = None,
+    ) -> AccountLease:
         async with self._lock:
-            active_accounts = await self._list_usable_accounts()
+            excluded_ids = set(exclude_account_ids or [])
+            active_accounts = await self._list_usable_accounts(excluded_ids)
             if not active_accounts:
                 await self.ensure_minimum_accounts()
-                active_accounts = await self._list_usable_accounts()
+                active_accounts = await self._list_usable_accounts(excluded_ids)
             if not active_accounts:
                 raise RuntimeError("No active accounts are available")
 
@@ -180,12 +185,18 @@ class AccountPoolService:
             self._cycle_ids = ids
             self._cycle_iter = cycle(ids)
 
-    async def _list_usable_accounts(self) -> list[AccountRecord]:
+    async def _list_usable_accounts(
+        self,
+        exclude_account_ids: set[int] | None = None,
+    ) -> list[AccountRecord]:
         active_accounts = await self.account_repository.list_ready()
+        excluded_ids = exclude_account_ids or set()
         return [
             account
             for account in active_accounts
-            if account.failure_count < self.settings.account_error_limit
+            if account.id not in excluded_ids
+            and account.failure_count < self.settings.account_error_limit
+            and account.credits_last_known != 0
         ]
 
     def _select_next(self, active_accounts: list[AccountRecord]) -> AccountRecord:

@@ -4,42 +4,20 @@ import asyncio
 import contextlib
 import logging
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from typing import Any
 
 from fastapi import FastAPI, Request
 from pydantic import BaseModel, Field
 
 from svgmaker_proxy import __version__
-from svgmaker_proxy.clients.firebase_identity import FirebaseIdentityClient
-from svgmaker_proxy.clients.svgmaker_generation import SvgmakerGenerationClient
+from svgmaker_proxy.bootstrap import ServiceContainer, build_services
 from svgmaker_proxy.core.config import get_settings
 from svgmaker_proxy.core.logging import configure_logging
 from svgmaker_proxy.models.account import AccountRecord
 from svgmaker_proxy.models.account_action import AccountActionRecord
 from svgmaker_proxy.models.generation import SvgmakerGenerateRequest
-from svgmaker_proxy.services.account_action_logger import AccountActionLogger
-from svgmaker_proxy.services.account_pool import AccountPoolService
-from svgmaker_proxy.services.account_registrar import AccountRegistrarService
-from svgmaker_proxy.services.generation_proxy import GenerationProxyService
-from svgmaker_proxy.storage.account_action_repository import AccountActionRepository
-from svgmaker_proxy.storage.account_repository import AccountRepository
-from svgmaker_proxy.storage.db import Database
-from svgmaker_proxy.storage.generation_repository import GenerationRepository
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(slots=True)
-class ServiceContainer:
-    database: Database
-    account_repository: AccountRepository
-    account_action_repository: AccountActionRepository
-    account_action_logger: AccountActionLogger
-    generation_repository: GenerationRepository
-    account_registrar: AccountRegistrarService
-    account_pool: AccountPoolService
-    generation_proxy: GenerationProxyService
 
 
 class RegisterAccountRequest(BaseModel):
@@ -98,52 +76,11 @@ class AccountActionResponse(BaseModel):
         )
 
 
-def _build_services() -> ServiceContainer:
-    settings = get_settings()
-    database = Database(settings)
-    account_repository = AccountRepository()
-    account_action_repository = AccountActionRepository()
-    account_action_logger = AccountActionLogger(account_action_repository)
-    generation_repository = GenerationRepository()
-    firebase_client = FirebaseIdentityClient(settings)
-    account_registrar = AccountRegistrarService(
-        account_repository=account_repository,
-        action_logger=account_action_logger,
-        settings=settings,
-        firebase_client=firebase_client,
-    )
-    account_pool = AccountPoolService(
-        account_repository=account_repository,
-        registrar=account_registrar,
-        settings=settings,
-    )
-    generation_proxy = GenerationProxyService(
-        account_pool=account_pool,
-        account_repository=account_repository,
-        generation_repository=generation_repository,
-        generation_client=SvgmakerGenerationClient(settings),
-        firebase_client=firebase_client,
-        action_logger=account_action_logger,
-    )
-    return ServiceContainer(
-        database=database,
-        account_repository=account_repository,
-        account_action_repository=account_action_repository,
-        account_action_logger=account_action_logger,
-        generation_repository=generation_repository,
-        account_registrar=account_registrar,
-        account_pool=account_pool,
-        generation_proxy=generation_proxy,
-    )
-
-
 def get_services(request: Request) -> ServiceContainer:
     return request.app.state.services
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    services = _build_services()
+async def initialize_services(services: ServiceContainer) -> None:
     await services.database.initialize()
     gmail_profile = await services.account_registrar.gmail_service.healthcheck()
     logger.info(
@@ -151,8 +88,25 @@ async def lifespan(app: FastAPI):
         gmail_profile["email_address"],
         gmail_profile.get("messages_total"),
     )
+
+
+async def run_account_pool_refill_loop(services: ServiceContainer) -> None:
+    settings = get_settings()
+    interval = max(5.0, settings.pool_refill_interval_seconds)
+    while True:
+        try:
+            await services.account_pool.ensure_minimum_accounts()
+        except Exception:  # noqa: BLE001
+            logger.exception("Background account refill iteration failed")
+        await asyncio.sleep(interval)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    services = build_services()
+    await initialize_services(services)
     app.state.services = services
-    refill_task = asyncio.create_task(services.account_pool.ensure_minimum_accounts())
+    refill_task = asyncio.create_task(run_account_pool_refill_loop(services))
     try:
         yield
     finally:
@@ -163,17 +117,24 @@ async def lifespan(app: FastAPI):
         await services.database.dispose()
 
 
-def create_app() -> FastAPI:
+def create_app(
+    *,
+    services: ServiceContainer | None = None,
+    manage_lifecycle: bool = True,
+) -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level)
 
+    lifespan_handler = lifespan if manage_lifecycle else None
     app = FastAPI(
         title=settings.app_name,
         version=__version__,
         docs_url="/docs",
         redoc_url="/redoc",
-        lifespan=lifespan,
+        lifespan=lifespan_handler,
     )
+    if services is not None:
+        app.state.services = services
 
     @app.get("/health")
     async def healthcheck(request: Request) -> dict[str, Any]:
