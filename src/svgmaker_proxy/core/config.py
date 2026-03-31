@@ -102,6 +102,27 @@ class Settings(BaseSettings):
             "SVGM_GENERATION_RETRY_ATTEMPTS",
         ),
     )
+    account_acquire_wait_seconds: float = Field(
+        default=180.0,
+        validation_alias=AliasChoices(
+            "SVGM_PROXY_ACCOUNT_ACQUIRE_WAIT_SECONDS",
+            "SVGM_ACCOUNT_ACQUIRE_WAIT_SECONDS",
+        ),
+    )
+    account_acquire_poll_interval_seconds: float = Field(
+        default=2.0,
+        validation_alias=AliasChoices(
+            "SVGM_PROXY_ACCOUNT_ACQUIRE_POLL_INTERVAL_SECONDS",
+            "SVGM_ACCOUNT_ACQUIRE_POLL_INTERVAL_SECONDS",
+        ),
+    )
+    zero_balance_refresh_interval_seconds: float = Field(
+        default=90000.0,
+        validation_alias=AliasChoices(
+            "SVGM_PROXY_ZERO_BALANCE_REFRESH_INTERVAL_SECONDS",
+            "SVGM_ZERO_BALANCE_REFRESH_INTERVAL_SECONDS",
+        ),
+    )
 
     generate_quality_default: str = Field(default="high", alias="SVGM_DEFAULT_QUALITY")
     generate_aspect_ratio_default: str = Field(

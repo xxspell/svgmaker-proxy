@@ -240,6 +240,11 @@ See [`.env.example`](/Users/xxspell/Code/svgmaker-proxy/.env.example).
 Key variables:
 
 ```env
+POSTGRES_DB=svgmaker_proxy
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_PORT=5432
+
 SVGM_PROXY_HOST=0.0.0.0
 SVGM_PROXY_PORT=8000
 APP_ENV=dev
@@ -261,6 +266,9 @@ SVGM_PROXY_ACCOUNT_ERROR_LIMIT=3
 SVGM_PROXY_ACCOUNT_SELECTION_STRATEGY=round_robin
 SVGM_PROXY_POOL_REFILL_INTERVAL_SECONDS=60
 SVGM_PROXY_GENERATION_RETRY_ATTEMPTS=3
+SVGM_PROXY_ACCOUNT_ACQUIRE_WAIT_SECONDS=180
+SVGM_PROXY_ACCOUNT_ACQUIRE_POLL_INTERVAL_SECONDS=2
+SVGM_PROXY_ZERO_BALANCE_REFRESH_INTERVAL_SECONDS=90000
 
 SVGM_PROXY_REQUEST_TIMEOUT=60
 SVGM_PROXY_GENERATE_TIMEOUT=300
@@ -320,6 +328,56 @@ Run API, Telegram bot, and background pool refill in one process:
 ```bash
 uv run svgmaker-proxy-stack
 ```
+
+## Docker Compose
+
+The repository includes a containerized application service and an optional bundled PostgreSQL service.
+
+The application container:
+
+- runs migrations on startup with `uv run alembic upgrade head`
+- starts the unified stack with `uv run svgmaker-proxy-stack`
+- includes Cairo and related native libraries needed for Telegram SVG to PNG conversion
+
+If you use an external PostgreSQL instance, set `DATABASE_URL` in `.env` and start only the app:
+
+```bash
+docker compose up --build
+```
+
+If you want the bundled PostgreSQL container instead, start the `local-db` profile:
+
+```bash
+docker compose --profile local-db up --build
+```
+
+Run in the background:
+
+```bash
+docker compose up --build -d
+```
+
+Stop the stack:
+
+```bash
+docker compose down
+```
+
+The API is exposed on:
+
+```text
+http://127.0.0.1:8000
+```
+
+The HTTP MCP endpoint is exposed on:
+
+```text
+http://127.0.0.1:8000/mcp
+```
+
+When using Docker Compose, the application container reads `DATABASE_URL` from `.env`.
+The bundled `postgres` service is optional and is only started when the `local-db`
+profile is enabled.
 
 ## Validation
 

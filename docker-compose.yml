@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:17
+    profiles: ["local-db"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-svgmaker_proxy}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SVGM_PROXY_HOST: 0.0.0.0
+      SVGM_PROXY_PORT: ${SVGM_PROXY_PORT:-8000}
+      SVGM_PROXY_MCP_PATH: ${SVGM_PROXY_MCP_PATH:-/mcp}
+    ports:
+      - "${SVGM_PROXY_PORT:-8000}:8000"
+
+volumes:
+  postgres_data:

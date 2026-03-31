@@ -86,7 +86,7 @@ async def run_account_pool_refill_loop(services: ServiceContainer) -> None:
     interval = max(5.0, settings.pool_refill_interval_seconds)
     while True:
         try:
-            await services.account_pool.ensure_minimum_accounts()
+            await services.account_pool.maintain_pool()
         except Exception:  # noqa: BLE001
             logger.exception("Background account refill iteration failed")
         await asyncio.sleep(interval)
