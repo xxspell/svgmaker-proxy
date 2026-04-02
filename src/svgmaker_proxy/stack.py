@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 
 import uvicorn
 from aiogram import Bot, Dispatcher
@@ -17,11 +18,11 @@ from svgmaker_proxy.core.config import get_settings
 from svgmaker_proxy.core.logging import configure_logging
 from svgmaker_proxy.telegram.app import build_bot_service, configure_dispatcher
 
+logger = logging.getLogger(__name__)
+
 
 async def run_stack() -> None:
     settings = get_settings()
-    if not settings.telegram_bot_token:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN must be configured")
 
     configure_logging(settings.log_level)
     services = build_services()
@@ -36,39 +37,42 @@ async def run_stack() -> None:
     )
     server = uvicorn.Server(config)
 
-    bot = Bot(
-        token=settings.telegram_bot_token,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
-    dispatcher = Dispatcher()
-    await configure_dispatcher(dispatcher, build_bot_service(services))
+    bot: Bot | None = None
+    dispatcher: Dispatcher | None = None
+    if settings.telegram_bot_token:
+        bot = Bot(
+            token=settings.telegram_bot_token,
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        )
+        dispatcher = Dispatcher()
+        await configure_dispatcher(dispatcher, build_bot_service(services))
+    else:
+        logger.warning("TELEGRAM_BOT_TOKEN is not configured; Telegram bot startup is skipped")
 
-    api_task = asyncio.create_task(server.serve(), name="svgmaker-api")
-    bot_task = asyncio.create_task(dispatcher.start_polling(bot), name="svgmaker-telegram")
-    refill_task = asyncio.create_task(
-        run_account_pool_refill_loop(services),
-        name="svgmaker-pool-refill",
-    )
+    tasks: list[asyncio.Task[object]] = [
+        asyncio.create_task(server.serve(), name="svgmaker-api"),
+        asyncio.create_task(run_account_pool_refill_loop(services), name="svgmaker-pool-refill"),
+    ]
+    if dispatcher is not None and bot is not None:
+        tasks.append(asyncio.create_task(dispatcher.start_polling(bot), name="svgmaker-telegram"))
 
     async with app.state.mcp_server.session_manager.run():
         try:
-            done, _ = await asyncio.wait(
-                {api_task, bot_task, refill_task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+            done, _ = await asyncio.wait(set(tasks), return_when=asyncio.FIRST_COMPLETED)
             for task in done:
                 exc = task.exception()
                 if exc is not None:
                     raise exc
         finally:
             server.should_exit = True
-            for task in (api_task, bot_task, refill_task):
+            for task in tasks:
                 if not task.done():
                     task.cancel()
-            for task in (api_task, bot_task, refill_task):
+            for task in tasks:
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
-            await bot.session.close()
+            if bot is not None:
+                await bot.session.close()
             await services.database.dispose()
 
 

@@ -645,19 +645,33 @@ The application container:
 
 - runs migrations on startup with `uv run alembic upgrade head`
 - starts the unified stack with `uv run svgmaker-proxy-stack`
+- serves the HTTP API and mounted MCP endpoint from the same container
+- runs the Telegram bot in the same container when `TELEGRAM_BOT_TOKEN` is configured
 - includes Cairo and related native libraries needed for Telegram SVG to PNG conversion
 
-If you use an external PostgreSQL instance, set `DATABASE_URL` in `.env` and start only the app:
+Recommended mode: use your existing external PostgreSQL instance by setting `DATABASE_URL` in `.env` and starting only the app container:
 
 ```bash
 docker compose up --build
 ```
 
-If you want the bundled PostgreSQL container instead, start the `local-db` profile:
+Important: when running inside Docker, `DATABASE_URL` must point to a reachable network host for PostgreSQL, not `127.0.0.1` inside the container.
+Use your LAN IP or DNS name for the external database host.
+If `DATABASE_URL` is not provided, Compose falls back to the optional bundled profile URL `postgresql+asyncpg://postgres:postgres@postgres:5432/svgmaker_proxy`.
+
+If you want the bundled PostgreSQL container instead, start the optional `local-db` profile and point `DATABASE_URL` at the `postgres` service:
 
 ```bash
 docker compose --profile local-db up --build
 ```
+```env
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/svgmaker_proxy
+```
+
+If `TELEGRAM_BOT_TOKEN` is omitted, the container still starts API, MCP, and background refill; only Telegram bot polling is skipped.
+
+The app service also exposes a Docker healthcheck via `/health`.
+You can change `SVGM_PROXY_PORT` in `.env`, and Docker Compose will use the same port for the app listener, published port, and healthcheck.
 
 Run in the background:
 
@@ -674,13 +688,13 @@ docker compose down
 The API is exposed on:
 
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1:${SVGM_PROXY_PORT}
 ```
 
 The HTTP MCP endpoint is exposed on:
 
 ```text
-http://127.0.0.1:8000/mcp
+http://127.0.0.1:${SVGM_PROXY_PORT}/mcp
 ```
 
 When using Docker Compose, the application container reads `DATABASE_URL` from `.env`.

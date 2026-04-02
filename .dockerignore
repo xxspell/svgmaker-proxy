@@ -10,3 +10,12 @@
 __pycache__/
 *.pyc
 output/
+.claude/
+.env.*
+build/
+dist/
+*.egg-info/
+coverage/
+htmlcov/
+.pytype/
+DS_Store
