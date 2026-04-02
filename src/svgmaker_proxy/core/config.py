@@ -24,10 +24,7 @@ class Settings(BaseSettings):
     mcp_mount_path: str = Field(default="/mcp", alias="SVGM_PROXY_MCP_PATH")
 
     database_url: str = Field(
-        default=(
-            "postgresql+asyncpg://postgres:"
-            f"{quote_plus('postgres')}@192.168.1.110:9121/svgmaker_proxy"
-        ),
+        default="postgresql+asyncpg://postgres:postgres@postgres:5432/svgmaker_proxy",
         alias="DATABASE_URL",
     )
 
