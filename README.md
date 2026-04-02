@@ -80,6 +80,8 @@ Important details:
 - `POST /accounts/refill` - refill the pool to the target size manually
 - `POST /generate` - generation proxy
 - `POST /proxy/generate` - alias for the generation proxy
+- `POST /edit` - edit proxy
+- `POST /proxy/edit` - alias for the edit proxy
 - `GET /generations/{request_id}` - inspect a persisted generation record
 
 ## Telegram Bot
@@ -118,7 +120,7 @@ The repository also contains a private MCP server intended for AI tools and IDE 
 
 Design goals:
 
-- expose only SVG generation
+- expose SVG generation and editing
 - hide account rotation, retries, pool refill, and balance logic
 - reuse the same local proxy services instead of the official SVGMaker API key flow
 
@@ -126,6 +128,8 @@ Current MCP tools:
 
 - `svgmaker_generate`
 - `svgmaker_generate_link`
+- `svgmaker_edit`
+- `svgmaker_edit_link`
 
 `svgmaker_generate` accepts:
 
@@ -152,11 +156,309 @@ It returns only lightweight fields:
 - `generation_id`
 - `svg_url`
 
+`svgmaker_edit` accepts:
+
+- `prompt`
+- `source_svg_text` or `source_file_text`
+- optional `source_filename`
+- `quality`
+- `aspect_ratio`
+- `background`
+
+It returns:
+
+- `generation_id`
+- `svg_url`
+- `svg_text`
+
+`svgmaker_edit_link` accepts the same edit inputs and returns only:
+
+- `generation_id`
+- `svg_url`
+
 Recommendation:
 
-- use `svgmaker_generate_link` for remote HTTP MCP clients
-- use `svgmaker_generate` when you need raw `svg_text`
+- use `svgmaker_generate_link` or `svgmaker_edit_link` for remote HTTP MCP clients
+- use `svgmaker_generate` or `svgmaker_edit` when you need raw `svg_text`
 
+For edit tools, provide exactly one source mode:
+
+- `source_svg_text` for inline SVG markup
+- `source_file_text` for uploaded-file style SVG content
+
+The HTTP API exposes the same edit capability via JSON and multipart form requests.
+
+JSON mode uses raw SVG text:
+
+```bash
+curl -X POST http://127.0.0.1:8000/proxy/edit \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "prompt": "make the strokes thicker and change the fill to blue",
+    "quality": "high",
+    "aspect_ratio": "auto",
+    "background": "auto",
+    "stream": true,
+    "svg_text": true,
+    "source_svg_text": "<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 100 100""><circle cx=""50"" cy=""50"" r=""30"" fill=""red""/></svg>"
+  }'
+```
+
+Multipart mode uses an uploaded SVG file:
+
+```bash
+curl -X POST http://127.0.0.1:8000/proxy/edit \
+  -F 'prompt=make the icon monochrome black' \
+  -F 'quality=high' \
+  -F 'aspect_ratio=auto' \
+  -F 'background=auto' \
+  -F 'stream=true' \
+  -F 'svg_text=true' \
+  -F 'image=@./input.svg;type=image/svg+xml'
+```
+
+Edit responses follow the same proxy response shape as generation.
+
+Example edit response shape:
+
+```json
+{
+  "request_id": 22,
+  "account_id": 14,
+  "generation_id": "edit_abc123",
+  "svg_url": "https://example.com/edited.svg",
+  "balance_before": 3,
+  "balance_after": 0,
+  "raw_payload": {}
+}
+```
+
+If upstream rejects invalid SVG input, the request fails without counting it as an account failure.
+
+Example generation request:
+
+```bash
+curl -X POST http://127.0.0.1:8000/proxy/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "prompt": "minimal flat orange fox head logo, clean vector, white background",
+    "quality": "high",
+    "aspect_ratio": "auto",
+    "background": "auto",
+    "stream": true,
+    "base64_png": false,
+    "svg_text": true,
+    "style_params": {}
+  }'
+```
+
+Example generation response shape:
+
+```json
+{
+  "request_id": 21,
+  "account_id": 14,
+  "generation_id": "abc123",
+  "svg_url": "https://example.com/file.svg",
+  "balance_before": 6,
+  "balance_after": 3,
+  "raw_payload": {}
+}
+```
+
+Example edit request:
+
+```bash
+curl -X POST http://127.0.0.1:8000/proxy/edit \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "prompt": "turn this into a green outline icon",
+    "quality": "high",
+    "aspect_ratio": "auto",
+    "background": "auto",
+    "stream": true,
+    "svg_text": true,
+    "source_svg_text": "<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 24 24""><path d=""M4 4h16v16H4z"" fill=""#f00""/></svg>"
+  }'
+```
+
+Example edit response shape:
+
+```json
+{
+  "request_id": 22,
+  "account_id": 14,
+  "generation_id": "edit_abc123",
+  "svg_url": "https://example.com/edited.svg",
+  "balance_before": 3,
+  "balance_after": 0,
+  "raw_payload": {}
+}
+```
+
+Recommendation still applies:
+
+- use link-style tools and endpoints when you only need the resulting URL
+- use the full variants when you need raw `svg_text`
+
+The edit flow reuses the same pooled-account proxy behavior as generation, including retry on `402 Payment Required`.
+
+Current HTTP examples:
+
+Generation request:
+
+```bash
+curl -X POST http://127.0.0.1:8000/proxy/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "prompt": "minimal flat orange fox head logo, clean vector, white background",
+    "quality": "high",
+    "aspect_ratio": "auto",
+    "background": "auto",
+    "stream": true,
+    "base64_png": false,
+    "svg_text": true,
+    "style_params": {}
+  }'
+```
+
+Generation response shape:
+
+```json
+{
+  "request_id": 21,
+  "account_id": 14,
+  "generation_id": "abc123",
+  "svg_url": "https://example.com/file.svg",
+  "balance_before": 6,
+  "balance_after": 3,
+  "raw_payload": {}
+}
+```
+
+Edit request (JSON raw SVG text):
+
+```bash
+curl -X POST http://127.0.0.1:8000/proxy/edit \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "prompt": "make the icon monochrome black",
+    "quality": "high",
+    "aspect_ratio": "auto",
+    "background": "auto",
+    "stream": true,
+    "svg_text": true,
+    "source_svg_text": "<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 24 24""><path d=""M4 4h16v16H4z"" fill=""#f00""/></svg>"
+  }'
+```
+
+Edit request (multipart upload):
+
+```bash
+curl -X POST http://127.0.0.1:8000/proxy/edit \
+  -F 'prompt=make the icon monochrome black' \
+  -F 'quality=high' \
+  -F 'aspect_ratio=auto' \
+  -F 'background=auto' \
+  -F 'stream=true' \
+  -F 'svg_text=true' \
+  -F 'image=@./input.svg;type=image/svg+xml'
+```
+
+Edit response shape:
+
+```json
+{
+  "request_id": 22,
+  "account_id": 14,
+  "generation_id": "edit_abc123",
+  "svg_url": "https://example.com/edited.svg",
+  "balance_before": 3,
+  "balance_after": 0,
+  "raw_payload": {}
+}
+```
+
+Invalid SVG edit input is treated as a request failure, not as an account health failure.
+
+The rest of the runtime and deployment setup stays the same.
+
+Current MCP generation and edit tools can all be served over stdio or mounted HTTP MCP.
+
+Use the same stdio and HTTP MCP configurations below.
+
+Existing server entrypoints remain unchanged.
+
+Current HTTP and MCP examples continue below.
+
+Current response envelope for proxy endpoints remains shared across generation and edit.
+
+The examples below use `/proxy/generate`, but `/generate` and `/edit` aliases are also available.
+
+The generation example remains available for compatibility reference.
+
+The edit examples are the preferred reference when integrating SVG modification support.
+
+Use the file-upload edit path when you already have an `.svg` file on disk.
+
+Use the raw-text edit path when an agent or client already has the SVG markup in memory.
+
+The proxy still hides account leasing and balance bookkeeping from callers.
+
+All edit requests persist their own records separately from generation requests.
+
+The account pool logic is shared between generation and edit.
+
+The upstream `/api/edit` SSE stream is consumed to completion before returning the final payload.
+
+The final result contract remains intentionally generation-like for easier client reuse.
+
+The remaining sections below cover runtime configuration and deployment.
+
+Run the MCP server over stdio:
+
+```bash
+uv run svgmaker-proxy-mcp
+```
+
+For server deployments, the FastAPI app also mounts the MCP endpoint over HTTP at:
+
+```text
+/mcp
+```
+
+That means when your API is running on `https://your-domain.example`, the MCP endpoint is:
+
+```text
+https://your-domain.example/mcp
+```
+
+Example local stdio MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "svgmaker-proxy": {
+      "command": "uv",
+      "args": ["run", "svgmaker-proxy-mcp"],
+      "transport": "stdio"
+    }
+  }
+}
+```
+
+Example remote HTTP MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "svgmaker-proxy": {
+      "transport": "streamable-http",
+      "url": "https://your-domain.example/mcp"
+    }
+  }
+}
+```,
 Run the MCP server over stdio:
 
 ```bash
@@ -266,8 +568,14 @@ SVGM_PROXY_ACCOUNT_ERROR_LIMIT=3
 SVGM_PROXY_ACCOUNT_SELECTION_STRATEGY=round_robin
 SVGM_PROXY_POOL_REFILL_INTERVAL_SECONDS=60
 SVGM_PROXY_GENERATION_RETRY_ATTEMPTS=3
+SVGM_PROXY_GENERATE_MIN_CREDITS=3
+SVGM_PROXY_EDIT_MIN_CREDITS=5
 SVGM_PROXY_ACCOUNT_ACQUIRE_WAIT_SECONDS=180
 SVGM_PROXY_ACCOUNT_ACQUIRE_POLL_INTERVAL_SECONDS=2
+SVGM_PROXY_UNKNOWN_BALANCE_REFRESH_INTERVAL_SECONDS=3600
+SVGM_PROXY_LOW_BALANCE_REFRESH_INTERVAL_SECONDS=90000
+SVGM_PROXY_KNOWN_BALANCE_REFRESH_INTERVAL_SECONDS=86400
+SVGM_PROXY_MAX_BALANCE_REFRESH_PER_CYCLE=3
 SVGM_PROXY_ZERO_BALANCE_REFRESH_INTERVAL_SECONDS=90000
 
 SVGM_PROXY_REQUEST_TIMEOUT=60

@@ -47,14 +47,31 @@ class AccountPoolService:
     async def acquire_account(
         self,
         exclude_account_ids: Iterable[int] | None = None,
+        *,
+        required_credits: int = 1,
+        operation: str = "request",
     ) -> AccountLease:
         async with self._lock:
             excluded_ids = set(exclude_account_ids or [])
             deadline = monotonic() + self.settings.account_acquire_wait_seconds
-            active_accounts = await self._wait_for_usable_accounts(excluded_ids, deadline)
+            active_accounts = await self._wait_for_usable_accounts(
+                excluded_ids,
+                deadline,
+                required_credits=required_credits,
+                operation=operation,
+            )
 
             await self._refresh_cycle(active_accounts)
             selected = self._select_next(active_accounts)
+            logger.info(
+                "Selected account account_id=%s email=%s operation=%s "
+                "required_credits=%s known_credits=%s",
+                selected.id,
+                selected.email,
+                operation,
+                required_credits,
+                selected.credits_last_known,
+            )
             session = self._to_session(selected)
             if not session:
                 raise RuntimeError(
@@ -73,32 +90,46 @@ class AccountPoolService:
         self,
         excluded_ids: set[int],
         deadline: float,
+        *,
+        required_credits: int,
+        operation: str,
     ) -> list[AccountRecord]:
         while True:
-            active_accounts = await self._list_usable_accounts(excluded_ids)
+            active_accounts = await self._list_usable_accounts(
+                excluded_ids,
+                required_credits=required_credits,
+            )
             if active_accounts:
                 return active_accounts
 
             await self.ensure_minimum_accounts()
-            active_accounts = await self._list_usable_accounts(excluded_ids)
+            active_accounts = await self._list_usable_accounts(
+                excluded_ids,
+                required_credits=required_credits,
+            )
             if active_accounts:
                 return active_accounts
 
             remaining = deadline - monotonic()
             if remaining <= 0:
                 raise RuntimeError(
-                    "No active accounts are available after waiting for the pool to refill"
+                    "No active accounts are available for "
+                    f"{operation} after waiting for the pool to refill"
                 )
 
             sleep_for = min(self.settings.account_acquire_poll_interval_seconds, remaining)
             logger.info(
-                "No ready accounts available yet, waiting %.1fs for pool refill",
+                "No usable accounts available yet operation=%s required_credits=%s waiting=%.1fs",
+                operation,
+                required_credits,
                 sleep_for,
             )
             await asyncio.sleep(sleep_for)
 
     async def ensure_minimum_accounts(self) -> None:
-        usable_accounts = await self._list_usable_accounts()
+        usable_accounts = await self._list_usable_accounts(
+            required_credits=self.settings.generate_min_credits
+        )
         ready_count = len(usable_accounts)
         pending_count = await self.account_repository.count_by_status(AccountStatus.pending)
         verifying_count = await self.account_repository.count_by_status(
@@ -130,7 +161,9 @@ class AccountPoolService:
 
     async def refill_accounts(self, desired_active: int | None = None) -> dict[str, int]:
         target = desired_active or self.settings.target_ready_accounts
-        ready_count = len(await self._list_usable_accounts())
+        ready_count = len(
+            await self._list_usable_accounts(required_credits=self.settings.generate_min_credits)
+        )
         pending_count = await self.account_repository.count_by_status(AccountStatus.pending)
         verifying_count = await self.account_repository.count_by_status(
             AccountStatus.verifying_email
@@ -145,50 +178,45 @@ class AccountPoolService:
         return await self.get_pool_snapshot()
 
     async def maintain_pool(self) -> None:
-        await self.refresh_stale_zero_balance_accounts()
+        await self.refresh_stale_account_balances()
         await self.ensure_minimum_accounts()
 
-    async def refresh_stale_zero_balance_accounts(self) -> None:
+    async def refresh_stale_account_balances(self) -> None:
         now = self._utcnow()
-        refresh_after = self.settings.zero_balance_refresh_interval_seconds
         accounts = await self.account_repository.list_all()
-        stale_accounts = [
-            account
-            for account in accounts
-            if account.status is AccountStatus.active
-            and account.email_verified
-            and account.has_complete_svgmaker_session
-            and account.credits_last_known == 0
-            and (
-                account.last_checked_at is None
-                or (now - account.last_checked_at).total_seconds() >= refresh_after
-            )
-        ]
+        stale_accounts = self._select_accounts_for_balance_refresh(accounts, now)
         if not stale_accounts:
             return
 
         logger.info(
-            "Refreshing %s zero-balance accounts that reached the refresh interval",
+            "Refreshing %s stale accounts for balance/session sync",
             len(stale_accounts),
         )
         for account in stale_accounts:
             try:
                 bundle = await self.registrar.refresh_account_session(account.id)
                 logger.info(
-                    "Refreshed zero-balance account account_id=%s credits=%s",
+                    "Refreshed stale account account_id=%s previous_credits=%s "
+                    "refreshed_credits=%s",
                     account.id,
+                    account.credits_last_known,
                     bundle.credits_last_known,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
-                    "Failed to refresh zero-balance account account_id=%s",
+                    "Failed to refresh stale account account_id=%s",
                     account.id,
                 )
                 await self.mark_failure(account.id, str(exc))
 
+    async def refresh_stale_zero_balance_accounts(self) -> None:
+        await self.refresh_stale_account_balances()
+
     async def get_pool_snapshot(self) -> dict[str, int]:
         ready = await self.account_repository.count_ready()
-        usable = len(await self._list_usable_accounts())
+        usable = len(
+            await self._list_usable_accounts(required_credits=self.settings.generate_min_credits)
+        )
         active = await self.account_repository.count_by_status(AccountStatus.active)
         pending = await self.account_repository.count_by_status(AccountStatus.pending)
         verifying = await self.account_repository.count_by_status(AccountStatus.verifying_email)
@@ -258,16 +286,92 @@ class AccountPoolService:
     async def _list_usable_accounts(
         self,
         exclude_account_ids: set[int] | None = None,
+        *,
+        required_credits: int,
     ) -> list[AccountRecord]:
         active_accounts = await self.account_repository.list_ready()
         excluded_ids = exclude_account_ids or set()
-        return [
+        usable_accounts: list[AccountRecord] = []
+        for account in active_accounts:
+            if account.id in excluded_ids:
+                continue
+            if self._is_usable_for_credits(account, required_credits):
+                usable_accounts.append(account)
+            else:
+                self._log_unusable_account(account, required_credits=required_credits)
+        return usable_accounts
+
+    def _is_usable_for_credits(self, account: AccountRecord, required_credits: int) -> bool:
+        credits = account.credits_last_known
+        return (
+            account.failure_count < self.settings.account_error_limit
+            and credits is not None
+            and credits >= required_credits
+        )
+
+    def _log_unusable_account(
+        self,
+        account: AccountRecord,
+        *,
+        required_credits: int,
+    ) -> None:
+        logger.debug(
+            "Skipping account account_id=%s credits=%s required_credits=%s failures=%s",
+            account.id,
+            account.credits_last_known,
+            required_credits,
+            account.failure_count,
+        )
+
+    def _select_accounts_for_balance_refresh(
+        self,
+        accounts: list[AccountRecord],
+        now: datetime,
+    ) -> list[AccountRecord]:
+        candidates = [
             account
-            for account in active_accounts
-            if account.id not in excluded_ids
-            and account.failure_count < self.settings.account_error_limit
-            and account.credits_last_known != 0
+            for account in accounts
+            if account.status is AccountStatus.active
+            and account.email_verified
+            and account.has_complete_svgmaker_session
+            and self._is_balance_stale(account, now)
         ]
+        candidates.sort(
+            key=lambda account: (
+                self._refresh_priority(account),
+                self._last_balance_check_timestamp(account),
+                account.id,
+            )
+        )
+        return candidates[: self.settings.max_balance_refresh_per_cycle]
+
+    def _is_balance_stale(self, account: AccountRecord, now: datetime) -> bool:
+        last_checked_at = account.last_checked_at
+        if last_checked_at is None:
+            return True
+        if account.last_generation_at and (now - account.last_generation_at).total_seconds() < 300:
+            return False
+        refresh_after = self._refresh_interval_for_account(account)
+        return (now - last_checked_at).total_seconds() >= refresh_after
+
+    def _refresh_interval_for_account(self, account: AccountRecord) -> float:
+        if account.credits_last_known is None:
+            return self.settings.unknown_balance_refresh_interval_seconds
+        if account.credits_last_known < self.settings.edit_min_credits:
+            return self.settings.low_balance_refresh_interval_seconds
+        return self.settings.known_balance_refresh_interval_seconds
+
+    def _refresh_priority(self, account: AccountRecord) -> int:
+        if account.credits_last_known is None:
+            return 0
+        if account.credits_last_known < self.settings.edit_min_credits:
+            return 1
+        return 2
+
+    def _last_balance_check_timestamp(self, account: AccountRecord) -> float:
+        if account.last_checked_at is None:
+            return 0.0
+        return account.last_checked_at.timestamp()
 
     def _select_next(self, active_accounts: list[AccountRecord]) -> AccountRecord:
         by_id = {item.id: item for item in active_accounts}

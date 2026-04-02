@@ -13,6 +13,7 @@ from svgmaker_proxy.services.generation_proxy import GenerationProxyService
 from svgmaker_proxy.storage.account_action_repository import AccountActionRepository
 from svgmaker_proxy.storage.account_repository import AccountRepository
 from svgmaker_proxy.storage.db import Database
+from svgmaker_proxy.storage.edit_repository import EditRepository
 from svgmaker_proxy.storage.generation_repository import GenerationRepository
 from svgmaker_proxy.storage.telegram_invite_code_repository import TelegramInviteCodeRepository
 from svgmaker_proxy.storage.telegram_user_repository import TelegramUserRepository
@@ -27,6 +28,7 @@ class ServiceContainer:
     account_action_repository: AccountActionRepository
     account_action_logger: AccountActionLogger
     generation_repository: GenerationRepository
+    edit_repository: EditRepository
     telegram_user_repository: TelegramUserRepository
     telegram_invite_code_repository: TelegramInviteCodeRepository
     account_registrar: AccountRegistrarService
@@ -41,6 +43,7 @@ def build_services() -> ServiceContainer:
     account_action_repository = AccountActionRepository()
     account_action_logger = AccountActionLogger(account_action_repository)
     generation_repository = GenerationRepository()
+    edit_repository = EditRepository()
     telegram_user_repository = TelegramUserRepository()
     telegram_invite_code_repository = TelegramInviteCodeRepository()
     firebase_client = FirebaseIdentityClient(settings)
@@ -59,6 +62,7 @@ def build_services() -> ServiceContainer:
         account_pool=account_pool,
         account_repository=account_repository,
         generation_repository=generation_repository,
+        edit_repository=edit_repository,
         generation_client=SvgmakerGenerationClient(settings),
         firebase_client=firebase_client,
         action_logger=account_action_logger,
@@ -70,6 +74,7 @@ def build_services() -> ServiceContainer:
         account_action_repository=account_action_repository,
         account_action_logger=account_action_logger,
         generation_repository=generation_repository,
+        edit_repository=edit_repository,
         telegram_user_repository=telegram_user_repository,
         telegram_invite_code_repository=telegram_invite_code_repository,
         account_registrar=account_registrar,

@@ -29,6 +29,10 @@ class AccountActionType(StrEnum):
     generation_balance_snapshot = "generation_balance_snapshot"
     generation_completed = "generation_completed"
     generation_failed = "generation_failed"
+    edit_started = "edit_started"
+    edit_balance_snapshot = "edit_balance_snapshot"
+    edit_completed = "edit_completed"
+    edit_failed = "edit_failed"
     account_marked_failed = "account_marked_failed"
 
 

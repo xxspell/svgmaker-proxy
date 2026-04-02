@@ -14,14 +14,18 @@ from svgmaker_proxy.core.config import Settings, get_settings
 from svgmaker_proxy.models.account import AccountUpdate
 from svgmaker_proxy.models.account_action import AccountActionType
 from svgmaker_proxy.models.generation import (
+    EditRequestCreate,
+    EditRequestUpdate,
     GenerationRequestCreate,
     GenerationRequestUpdate,
     GenerationStatus,
+    SvgmakerEditRequest,
     SvgmakerGenerateRequest,
 )
 from svgmaker_proxy.services.account_action_logger import AccountActionLogger
 from svgmaker_proxy.services.account_pool import AccountLease, AccountPoolService
 from svgmaker_proxy.storage.account_repository import AccountRepository
+from svgmaker_proxy.storage.edit_repository import EditRepository
 from svgmaker_proxy.storage.generation_repository import GenerationRepository
 
 logger = logging.getLogger(__name__)
@@ -38,12 +42,24 @@ class ProxiedGenerationResult:
     raw_payload: dict[str, Any]
 
 
+@dataclass(slots=True)
+class ProxiedEditResult:
+    request_id: int
+    account_id: int
+    generation_id: str | None
+    svg_url: str | None
+    balance_before: int | None
+    balance_after: int | None
+    raw_payload: dict[str, Any]
+
+
 class GenerationProxyService:
     def __init__(
         self,
         account_pool: AccountPoolService,
         account_repository: AccountRepository,
         generation_repository: GenerationRepository,
+        edit_repository: EditRepository,
         generation_client: SvgmakerGenerationClient,
         firebase_client: FirebaseIdentityClient,
         action_logger: AccountActionLogger | None = None,
@@ -53,6 +69,7 @@ class GenerationProxyService:
         self.account_pool = account_pool
         self.account_repository = account_repository
         self.generation_repository = generation_repository
+        self.edit_repository = edit_repository
         self.generation_client = generation_client
         self.firebase_client = firebase_client
         self.action_logger = action_logger
@@ -66,7 +83,9 @@ class GenerationProxyService:
         for attempt in range(1, self.settings.generation_retry_attempts + 1):
             try:
                 lease = await self.account_pool.acquire_account(
-                    exclude_account_ids=attempted_account_ids
+                    exclude_account_ids=attempted_account_ids,
+                    required_credits=self.settings.generate_min_credits,
+                    operation="generate",
                 )
             except Exception:
                 if last_error is not None:
@@ -74,8 +93,8 @@ class GenerationProxyService:
                 raise
             attempted_account_ids.add(lease.account_id)
             logger.info(
-                "Proxy generation started account_id=%s email=%s attempt=%s/%s prompt=%r "
-                "quality=%s aspect_ratio=%s background=%s",
+                "Proxy generation started account_id=%s email=%s attempt=%s/%s "
+                "prompt=%r quality=%s aspect_ratio=%s background=%s",
                 lease.account_id,
                 lease.email,
                 attempt,
@@ -107,14 +126,17 @@ class GenerationProxyService:
                     )
                 )
             elif record.account_id != lease.account_id:
-                record = await self.generation_repository.update(
-                    record.id,
-                    GenerationRequestUpdate(
-                        account_id=lease.account_id,
-                        status=GenerationStatus.running,
-                        error_message=None,
-                    ),
-                ) or record
+                record = (
+                    await self.generation_repository.update(
+                        record.id,
+                        GenerationRequestUpdate(
+                            account_id=lease.account_id,
+                            status=GenerationStatus.running,
+                            error_message=None,
+                        ),
+                    )
+                    or record
+                )
 
             result = await self._run_generation_attempt(
                 lease=lease,
@@ -165,6 +187,124 @@ class GenerationProxyService:
         )
         raise last_error
 
+    async def edit(self, request: SvgmakerEditRequest) -> ProxiedEditResult:
+        await self.account_pool.ensure_minimum_accounts()
+        record = None
+        attempted_account_ids: set[int] = set()
+        last_error: Exception | None = None
+
+        for attempt in range(1, self.settings.generation_retry_attempts + 1):
+            try:
+                lease = await self.account_pool.acquire_account(
+                    exclude_account_ids=attempted_account_ids,
+                    required_credits=self.settings.edit_min_credits,
+                    operation="edit",
+                )
+            except Exception:
+                if last_error is not None:
+                    break
+                raise
+            attempted_account_ids.add(lease.account_id)
+            logger.info(
+                "Proxy edit started account_id=%s email=%s attempt=%s/%s prompt=%r "
+                "quality=%s aspect_ratio=%s background=%s source_mode=%s",
+                lease.account_id,
+                lease.email,
+                attempt,
+                self.settings.generation_retry_attempts,
+                request.prompt,
+                request.quality,
+                request.aspect_ratio,
+                request.background,
+                request.source_mode.value,
+            )
+            await self._log_action(
+                lease.account_id,
+                AccountActionType.edit_started,
+                prompt=request.prompt,
+                quality=request.quality,
+                aspect_ratio=request.aspect_ratio,
+                background=request.background,
+                source_mode=request.source_mode.value,
+                source_filename=request.source_filename,
+                attempt=attempt,
+            )
+
+            if record is None:
+                record = await self.edit_repository.create(
+                    EditRequestCreate(
+                        account_id=lease.account_id,
+                        prompt=request.prompt,
+                        quality=request.quality,
+                        aspect_ratio=request.aspect_ratio,
+                        background=request.background,
+                        source_mode=request.source_mode,
+                        source_filename=request.source_filename,
+                        status=GenerationStatus.running,
+                    )
+                )
+            elif record.account_id != lease.account_id:
+                record = (
+                    await self.edit_repository.update(
+                        record.id,
+                        EditRequestUpdate(
+                            account_id=lease.account_id,
+                            status=GenerationStatus.running,
+                            error_message=None,
+                        ),
+                    )
+                    or record
+                )
+
+            result = await self._run_edit_attempt(
+                lease=lease,
+                request=request,
+                record_id=record.id,
+            )
+            if isinstance(result, ProxiedEditResult):
+                return result
+
+            last_error = result
+            if not self._should_retry_with_another_account(result):
+                break
+
+            await self.account_repository.update(
+                lease.account_id,
+                AccountUpdate(
+                    credits_last_known=0,
+                    last_checked_at=self._utcnow(),
+                ),
+            )
+            await self._log_action(
+                lease.account_id,
+                AccountActionType.edit_failed,
+                request_id=record.id,
+                error=str(result),
+                attempt=attempt,
+                retrying=True,
+                retry_reason="payment_required",
+            )
+            logger.warning(
+                "Edit attempt hit exhausted balance account_id=%s request_id=%s "
+                "attempt=%s/%s, retrying with another account",
+                lease.account_id,
+                record.id,
+                attempt,
+                self.settings.generation_retry_attempts,
+            )
+
+        if record is None or last_error is None:
+            raise RuntimeError("Edit failed before any attempt was executed")
+
+        await self.edit_repository.update(
+            record.id,
+            EditRequestUpdate(
+                status=GenerationStatus.failed,
+                error_message=str(last_error),
+            ),
+        )
+        raise last_error
+
     async def _run_generation_attempt(
         self,
         *,
@@ -173,7 +313,12 @@ class GenerationProxyService:
         record_id: int,
     ) -> ProxiedGenerationResult | Exception:
         balance_before_task = asyncio.create_task(
-            self._capture_balance_snapshot(lease=lease, phase="before", request_id=record_id)
+            self._capture_balance_snapshot(
+                lease=lease,
+                phase="before",
+                request_id=record_id,
+                action_type=AccountActionType.generation_balance_snapshot,
+            )
         )
 
         try:
@@ -220,6 +365,7 @@ class GenerationProxyService:
             phase="after",
             request_id=record_id,
             generation_id=generation_id,
+            action_type=AccountActionType.generation_balance_snapshot,
         )
 
         await self.generation_repository.update(
@@ -234,8 +380,8 @@ class GenerationProxyService:
         )
         await self.account_pool.mark_success(lease.account_id)
         logger.info(
-            "Proxy generation completed account_id=%s request_id=%s "
-            "generation_id=%s credit_cost=%s svg_url=%s balance_before=%s balance_after=%s",
+            "Proxy generation completed account_id=%s request_id=%s generation_id=%s "
+            "credit_cost=%s svg_url=%s balance_before=%s balance_after=%s",
             lease.account_id,
             record_id,
             generation_id,
@@ -254,7 +400,6 @@ class GenerationProxyService:
             balance_before=balance_before,
             balance_after=balance_after,
         )
-
         return ProxiedGenerationResult(
             request_id=record_id,
             account_id=lease.account_id,
@@ -263,6 +408,111 @@ class GenerationProxyService:
             balance_before=balance_before,
             balance_after=balance_after,
             raw_payload=payload,
+        )
+
+    async def _run_edit_attempt(
+        self,
+        *,
+        lease: AccountLease,
+        request: SvgmakerEditRequest,
+        record_id: int,
+    ) -> ProxiedEditResult | Exception:
+        balance_before_task = asyncio.create_task(
+            self._capture_balance_snapshot(
+                lease=lease,
+                phase="before",
+                request_id=record_id,
+                action_type=AccountActionType.edit_balance_snapshot,
+            )
+        )
+
+        try:
+            payload = await self.generation_client.edit_to_completion(lease.session, request)
+        except Exception as exc:
+            balance_before = await self._await_optional_task(balance_before_task)
+            if self._should_retry_with_another_account(exc):
+                logger.warning(
+                    "Proxy edit received retryable payment error account_id=%s request_id=%s: %s",
+                    lease.account_id,
+                    record_id,
+                    exc,
+                )
+                return exc
+            logger.exception(
+                "Proxy edit failed account_id=%s request_id=%s",
+                lease.account_id,
+                record_id,
+            )
+            await self.edit_repository.update(
+                record_id,
+                EditRequestUpdate(
+                    status=GenerationStatus.failed,
+                    error_message=str(exc),
+                ),
+            )
+            user_input_error = self._is_user_input_error(exc)
+            if not user_input_error:
+                await self.account_pool.mark_failure(lease.account_id, str(exc))
+            await self._log_action(
+                lease.account_id,
+                AccountActionType.edit_failed,
+                request_id=record_id,
+                error=str(exc),
+                balance_before=balance_before,
+                user_input_error=user_input_error,
+            )
+            return exc
+
+        balance_before = await self._await_optional_task(balance_before_task)
+        generation_id = self._as_optional_str(payload.get("generationId"))
+        svg_url = self._first_svg_url(payload)
+        credit_cost = self._as_optional_int(payload.get("creditCost"))
+        balance_after = await self._capture_balance_snapshot(
+            lease=lease,
+            phase="after",
+            request_id=record_id,
+            generation_id=generation_id,
+            action_type=AccountActionType.edit_balance_snapshot,
+        )
+
+        await self.edit_repository.update(
+            record_id,
+            EditRequestUpdate(
+                status=GenerationStatus.completed,
+                external_generation_id=generation_id,
+                svg_url=svg_url,
+                credit_cost=credit_cost,
+                error_message=None,
+            ),
+        )
+        await self.account_pool.mark_success(lease.account_id)
+        await self._log_action(
+            lease.account_id,
+            AccountActionType.edit_completed,
+            request_id=record_id,
+            generation_id=generation_id,
+            credit_cost=credit_cost,
+            svg_url=svg_url,
+            balance_before=balance_before,
+            balance_after=balance_after,
+        )
+        return ProxiedEditResult(
+            request_id=record_id,
+            account_id=lease.account_id,
+            generation_id=generation_id,
+            svg_url=svg_url,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            raw_payload=payload,
+        )
+
+    def _is_user_input_error(self, exc: Exception) -> bool:
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {400, 422}:
+            return True
+        message = str(exc).lower()
+        return any(
+            token in message
+            for token in ("invalid svg", "malformed svg", "unsupported file", "unprocessable")
         )
 
     def _should_retry_with_another_account(self, exc: Exception) -> bool:
@@ -300,6 +550,7 @@ class GenerationProxyService:
         lease: AccountLease,
         phase: str,
         request_id: int,
+        action_type: AccountActionType,
         generation_id: str | None = None,
     ) -> int | None:
         if not lease.firebase_local_id:
@@ -374,7 +625,7 @@ class GenerationProxyService:
             )
         await self._log_action(
             lease.account_id,
-            AccountActionType.generation_balance_snapshot,
+            action_type,
             phase=phase,
             request_id=request_id,
             generation_id=generation_id,

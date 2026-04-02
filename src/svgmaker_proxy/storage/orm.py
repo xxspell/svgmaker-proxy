@@ -44,6 +44,10 @@ class AccountORM(Base):
         back_populates="account",
         cascade="all, delete-orphan",
     )
+    edits: Mapped[list[EditRequestORM]] = relationship(
+        back_populates="account",
+        cascade="all, delete-orphan",
+    )
     actions: Mapped[list[AccountActionORM]] = relationship(
         back_populates="account",
         cascade="all, delete-orphan",
@@ -77,6 +81,37 @@ class GenerationRequestORM(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=False)
 
     account: Mapped[AccountORM] = relationship(back_populates="generations")
+
+
+class EditRequestORM(Base):
+    __tablename__ = "edit_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_generation_id: Mapped[str | None] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=True,
+        index=True,
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    quality: Mapped[str] = mapped_column(String(64), nullable=False)
+    aspect_ratio: Mapped[str] = mapped_column(String(64), nullable=False)
+    background: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_mode: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    source_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    credit_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    svg_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=False)
+
+    account: Mapped[AccountORM] = relationship(back_populates="edits")
 
 
 class AccountActionORM(Base):

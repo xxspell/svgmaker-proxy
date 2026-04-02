@@ -102,11 +102,69 @@ class Settings(BaseSettings):
             "SVGM_GENERATION_RETRY_ATTEMPTS",
         ),
     )
+    generate_min_credits: int = Field(
+        default=3,
+        validation_alias=AliasChoices(
+            "SVGM_PROXY_GENERATE_MIN_CREDITS",
+            "SVGM_GENERATE_MIN_CREDITS",
+        ),
+    )
+    edit_min_credits: int = Field(
+        default=5,
+        validation_alias=AliasChoices(
+            "SVGM_PROXY_EDIT_MIN_CREDITS",
+            "SVGM_EDIT_MIN_CREDITS",
+        ),
+    )
     account_acquire_wait_seconds: float = Field(
         default=180.0,
         validation_alias=AliasChoices(
             "SVGM_PROXY_ACCOUNT_ACQUIRE_WAIT_SECONDS",
             "SVGM_ACCOUNT_ACQUIRE_WAIT_SECONDS",
+        ),
+    )
+    unknown_balance_refresh_interval_seconds: float = Field(
+        default=3600.0,
+        validation_alias=AliasChoices(
+            "SVGM_PROXY_UNKNOWN_BALANCE_REFRESH_INTERVAL_SECONDS",
+            "SVGM_UNKNOWN_BALANCE_REFRESH_INTERVAL_SECONDS",
+        ),
+    )
+    low_balance_refresh_interval_seconds: float = Field(
+        default=90000.0,
+        validation_alias=AliasChoices(
+            "SVGM_PROXY_LOW_BALANCE_REFRESH_INTERVAL_SECONDS",
+            "SVGM_LOW_BALANCE_REFRESH_INTERVAL_SECONDS",
+        ),
+    )
+    known_balance_refresh_interval_seconds: float = Field(
+        default=86400.0,
+        validation_alias=AliasChoices(
+            "SVGM_PROXY_KNOWN_BALANCE_REFRESH_INTERVAL_SECONDS",
+            "SVGM_KNOWN_BALANCE_REFRESH_INTERVAL_SECONDS",
+        ),
+    )
+    max_balance_refresh_per_cycle: int = Field(
+        default=3,
+        validation_alias=AliasChoices(
+            "SVGM_PROXY_MAX_BALANCE_REFRESH_PER_CYCLE",
+            "SVGM_MAX_BALANCE_REFRESH_PER_CYCLE",
+        ),
+    )
+    account_acquire_poll_interval_seconds: float = Field(
+        default=2.0,
+        validation_alias=AliasChoices(
+            "SVGM_PROXY_ACCOUNT_ACQUIRE_POLL_INTERVAL_SECONDS",
+            "SVGM_ACCOUNT_ACQUIRE_POLL_INTERVAL_SECONDS",
+        ),
+    )
+    zero_balance_refresh_interval_seconds: float = Field(
+        default=90000.0,
+        validation_alias=AliasChoices(
+            "SVGM_PROXY_ZERO_BALANCE_REFRESH_INTERVAL_SECONDS",
+            "SVGM_ZERO_BALANCE_REFRESH_INTERVAL_SECONDS",
+            "SVGM_PROXY_LOW_BALANCE_REFRESH_INTERVAL_SECONDS",
+            "SVGM_LOW_BALANCE_REFRESH_INTERVAL_SECONDS",
         ),
     )
     account_acquire_poll_interval_seconds: float = Field(

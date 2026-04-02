@@ -4,9 +4,9 @@ import asyncio
 import contextlib
 import logging
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from svgmaker_proxy import __version__
@@ -16,9 +16,17 @@ from svgmaker_proxy.core.logging import configure_logging
 from svgmaker_proxy.mcp.server import create_mcp_server
 from svgmaker_proxy.models.account import AccountRecord
 from svgmaker_proxy.models.account_action import AccountActionRecord
-from svgmaker_proxy.models.generation import SvgmakerGenerateRequest
+from svgmaker_proxy.models.generation import SvgmakerEditRequest, SvgmakerGenerateRequest
 
 logger = logging.getLogger(__name__)
+
+EditPrompt = Annotated[str | None, Form()]
+EditQuality = Annotated[str, Form()]
+EditAspectRatio = Annotated[str, Form()]
+EditBackground = Annotated[str, Form()]
+EditStream = Annotated[bool, Form()]
+EditSvgText = Annotated[bool, Form()]
+EditImage = Annotated[UploadFile | None, File()]
 
 
 class RegisterAccountRequest(BaseModel):
@@ -209,6 +217,46 @@ def create_app(
     ) -> dict[str, Any]:
         services = get_services(request)
         result = await services.generation_proxy.generate(payload)
+        return {
+            "request_id": result.request_id,
+            "account_id": result.account_id,
+            "generation_id": result.generation_id,
+            "svg_url": result.svg_url,
+            "balance_before": result.balance_before,
+            "balance_after": result.balance_after,
+            "raw_payload": result.raw_payload,
+        }
+
+    @app.post("/edit")
+    @app.post("/proxy/edit")
+    async def proxy_edit(
+        request: Request,
+        prompt: EditPrompt = None,
+        quality: EditQuality = "high",
+        aspect_ratio: EditAspectRatio = "auto",
+        background: EditBackground = "auto",
+        stream: EditStream = True,
+        svg_text: EditSvgText = True,
+        image: EditImage = None,
+    ) -> dict[str, Any]:
+        services = get_services(request)
+        content_type = request.headers.get("content-type", "")
+        if content_type.startswith("application/json"):
+            payload = SvgmakerEditRequest.model_validate(await request.json())
+        else:
+            upload_content = await image.read() if image is not None else None
+            payload = SvgmakerEditRequest(
+                prompt=prompt or "",
+                quality=quality,
+                aspect_ratio=aspect_ratio,
+                background=background,
+                stream=stream,
+                svg_text=svg_text,
+                source_file_content=upload_content,
+                source_filename=image.filename if image is not None else None,
+                source_content_type=image.content_type if image is not None else None,
+            )
+        result = await services.generation_proxy.edit(payload)
         return {
             "request_id": result.request_id,
             "account_id": result.account_id,
