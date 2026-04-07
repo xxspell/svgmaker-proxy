@@ -16,6 +16,7 @@ from svgmaker_proxy.bootstrap import ServiceContainer, build_services, initializ
 from svgmaker_proxy.core.config import get_settings
 from svgmaker_proxy.core.logging import configure_logging
 from svgmaker_proxy.telegram.service import TelegramBotError, TelegramBotService
+from svgmaker_proxy.telegram.session import build_bot_session
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,7 @@ async def run_bot(services: ServiceContainer | None = None, initialize: bool = T
 
     bot = Bot(
         token=settings.telegram_bot_token,
+        session=build_bot_session(settings.telegram_proxy_url),
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher()

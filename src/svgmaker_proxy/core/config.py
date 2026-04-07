@@ -236,6 +236,7 @@ class Settings(BaseSettings):
     )
 
     telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
+    telegram_proxy_url: str | None = Field(default=None, alias="TELEGRAM_PROXY_URL")
     telegram_initial_generations: int = Field(default=3, alias="TELEGRAM_INITIAL_GENERATIONS")
     telegram_daily_generations: int = Field(default=1, alias="TELEGRAM_DAILY_GENERATIONS")
     telegram_welcome_generate_button: str = Field(

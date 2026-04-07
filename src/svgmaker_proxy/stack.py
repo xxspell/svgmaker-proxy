@@ -17,6 +17,7 @@ from svgmaker_proxy.bootstrap import build_services, initialize_services
 from svgmaker_proxy.core.config import get_settings
 from svgmaker_proxy.core.logging import configure_logging
 from svgmaker_proxy.telegram.app import build_bot_service, configure_dispatcher
+from svgmaker_proxy.telegram.session import build_bot_session
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ async def run_stack() -> None:
     if settings.telegram_bot_token:
         bot = Bot(
             token=settings.telegram_bot_token,
+            session=build_bot_session(settings.telegram_proxy_url),
             default=DefaultBotProperties(parse_mode=ParseMode.HTML),
         )
         dispatcher = Dispatcher()
