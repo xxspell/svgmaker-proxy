@@ -250,7 +250,7 @@ class SvgmakerGenerationClient:
         session: SvgmakerSession,
         request: SvgmakerGenerateRequest,
     ) -> dict[str, Any]:
-        if not getattr(self.settings, "stream_enabled", True):
+        if not self.settings.stream_enabled:
             return await self._generate_non_stream(session, request)
         return await self._consume_to_completion(
             self.stream_generate(session, request),

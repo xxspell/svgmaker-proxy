@@ -46,7 +46,6 @@ class _FakeGenerationHttpClient:
 @pytest.mark.asyncio
 async def test_generate_to_completion_uses_json_when_stream_disabled(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     settings = Settings(_env_file=None, SVGM_STREAM_ENABLED=False)
-    object.__setattr__(settings, "stream_enabled", False)
 
     expected_payload = {"status": "complete", "generationId": "g-123", "svgUrl": "https://example.com/g-123.svg"}
     fake_http_client = _FakeGenerationHttpClient(_FakeJsonResponse(expected_payload))
