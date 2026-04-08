@@ -52,6 +52,7 @@ class Settings(BaseSettings):
         default=300.0,
         validation_alias=AliasChoices("SVGM_PROXY_GENERATE_TIMEOUT", "SVGM_GENERATE_TIMEOUT"),
     )
+    stream_enabled: bool = Field(default=True, alias="SVGM_STREAM_ENABLED")
 
     min_ready_accounts: int = Field(
         default=3,
