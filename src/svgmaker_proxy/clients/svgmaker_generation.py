@@ -202,7 +202,7 @@ class SvgmakerGenerationClient:
                 ) from exc
             if not isinstance(response_payload, dict):
                 raise SvgmakerGenerationError("Edit non-stream response is not a JSON object")
-            status = str(response_payload.get("status", "complete"))
+            status = str(response_payload.get("status", "unknown"))
             if status == "error":
                 raise SvgmakerGenerationError(str(response_payload))
             if status != "complete":
@@ -288,7 +288,7 @@ class SvgmakerGenerationClient:
                 raise SvgmakerGenerationError(
                     "Generation non-stream response is not a JSON object"
                 )
-            status = str(response_payload.get("status", "complete"))
+            status = str(response_payload.get("status", "unknown"))
             if status == "error":
                 raise SvgmakerGenerationError(str(response_payload))
             if status != "complete":

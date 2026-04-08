@@ -139,3 +139,54 @@ async def test_generate_non_stream_raises_on_error_status(monkeypatch) -> None: 
 
     with pytest.raises(SvgmakerGenerationError):
         await client.generate_to_completion(session, SvgmakerGenerateRequest(prompt="cat"))
+
+
+@pytest.mark.asyncio
+async def test_generate_non_stream_raises_on_missing_status(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    settings = Settings(_env_file=None, SVGM_STREAM_ENABLED=False)
+    fake_http_client = _FakeGenerationHttpClient(_FakeJsonResponse({"generationId": "g-123"}))
+
+    monkeypatch.setattr(
+        svgmaker_generation,
+        "build_httpx_async_client",
+        lambda settings_arg, timeout: fake_http_client,
+    )
+
+    client = SvgmakerGenerationClient(settings=settings)
+    session = SvgmakerSession(
+        auth_token_id="id",
+        auth_token_refresh="refresh",
+        auth_token_sig="sig",
+        bearer_token="bearer",
+    )
+
+    with pytest.raises(SvgmakerGenerationError, match="ended before completion"):
+        await client.generate_to_completion(session, SvgmakerGenerateRequest(prompt="cat"))
+
+
+@pytest.mark.asyncio
+async def test_edit_non_stream_raises_on_error_status(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    settings = Settings(_env_file=None, SVGM_STREAM_ENABLED=False)
+    fake_http_client = _FakeGenerationHttpClient(
+        _FakeJsonResponse({"status": "error", "message": "invalid image"})
+    )
+
+    monkeypatch.setattr(
+        svgmaker_generation,
+        "build_httpx_async_client",
+        lambda settings_arg, timeout: fake_http_client,
+    )
+
+    client = SvgmakerGenerationClient(settings=settings)
+    session = SvgmakerSession(
+        auth_token_id="id",
+        auth_token_refresh="refresh",
+        auth_token_sig="sig",
+        bearer_token="bearer",
+    )
+
+    with pytest.raises(SvgmakerGenerationError):
+        await client.edit_to_completion(
+            session,
+            SvgmakerEditRequest(prompt="tweak logo", source_svg_text="<svg />"),
+        )
