@@ -6,14 +6,15 @@ import html
 import logging
 import os
 import secrets
+import sys
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-import httpx
 from aiogram.types import User as TelegramApiUser
 
+from svgmaker_proxy.clients.http import build_httpx_async_client
 from svgmaker_proxy.core.config import Settings, get_settings
 from svgmaker_proxy.models.generation import SvgmakerGenerateRequest
 from svgmaker_proxy.models.telegram import (
@@ -266,7 +267,7 @@ class TelegramBotService:
 
     async def _download_bytes(self, url: str) -> bytes | None:
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with build_httpx_async_client(self.settings, timeout=60.0) as client:
                 response = await client.get(url)
                 response.raise_for_status()
                 return response.content
@@ -314,7 +315,7 @@ class TelegramBotService:
         return datetime.now(UTC)
 
     def _configure_macos_cairo_paths(self) -> None:
-        if os.uname().sysname != "Darwin":
+        if sys.platform != "darwin":
             return
 
         candidates = [

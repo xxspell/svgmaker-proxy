@@ -200,7 +200,7 @@ curl -X POST http://127.0.0.1:8000/proxy/edit \
     "background": "auto",
     "stream": true,
     "svg_text": true,
-    "source_svg_text": "<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 100 100""><circle cx=""50"" cy=""50"" r=""30"" fill=""red""/></svg>"
+    "source_svg_text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><circle cx=\"50\" cy=\"50\" r=\"30\" fill=\"red\"/></svg>"
   }'
 ```
 
@@ -278,7 +278,7 @@ curl -X POST http://127.0.0.1:8000/proxy/edit \
     "background": "auto",
     "stream": true,
     "svg_text": true,
-    "source_svg_text": "<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 24 24""><path d=""M4 4h16v16H4z"" fill=""#f00""/></svg>"
+    "source_svg_text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M4 4h16v16H4z\" fill=\"#f00\"/></svg>"
   }'
 ```
 
@@ -348,7 +348,7 @@ curl -X POST http://127.0.0.1:8000/proxy/edit \
     "background": "auto",
     "stream": true,
     "svg_text": true,
-    "source_svg_text": "<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 24 24""><path d=""M4 4h16v16H4z"" fill=""#f00""/></svg>"
+    "source_svg_text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M4 4h16v16H4z\" fill=\"#f00\"/></svg>"
   }'
 ```
 
@@ -458,50 +458,6 @@ Example remote HTTP MCP client configuration:
     }
   }
 }
-```,
-Run the MCP server over stdio:
-
-```bash
-uv run svgmaker-proxy-mcp
-```
-
-For server deployments, the FastAPI app also mounts the MCP endpoint over HTTP at:
-
-```text
-/mcp
-```
-
-That means when your API is running on `https://your-domain.example`, the MCP endpoint is:
-
-```text
-https://your-domain.example/mcp
-```
-
-Example local stdio MCP client configuration:
-
-```json
-{
-  "mcpServers": {
-    "svgmaker-proxy": {
-      "command": "uv",
-      "args": ["run", "svgmaker-proxy-mcp"],
-      "transport": "stdio"
-    }
-  }
-}
-```
-
-Example remote HTTP MCP client configuration:
-
-```json
-{
-  "mcpServers": {
-    "svgmaker-proxy": {
-      "transport": "streamable-http",
-      "url": "https://your-domain.example/mcp"
-    }
-  }
-}
 ```
 
 Example generation request:
@@ -537,7 +493,7 @@ Example response shape:
 
 ## Configuration
 
-See [`.env.example`](/Users/xxspell/Code/svgmaker-proxy/.env.example).
+See [`.env.example`](./.env.example).
 
 Key variables:
 
@@ -580,6 +536,9 @@ SVGM_PROXY_ZERO_BALANCE_REFRESH_INTERVAL_SECONDS=90000
 
 SVGM_PROXY_REQUEST_TIMEOUT=60
 SVGM_PROXY_GENERATE_TIMEOUT=300
+# HTTP_PROXY_URL examples:
+# HTTP_PROXY_URL=http://host:port
+# HTTP_PROXY_URL=http://user:pass@host:port
 SVGM_PROXY_EMAIL_DOMAINS=example.com,example.org,example.net
 SVGM_PROXY_EMAIL_TIMEOUT_SECONDS=180
 SVGM_PROXY_EMAIL_POLL_INTERVAL_SECONDS=5

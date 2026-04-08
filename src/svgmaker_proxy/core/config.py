@@ -47,6 +47,7 @@ class Settings(BaseSettings):
         default=60.0,
         validation_alias=AliasChoices("SVGM_PROXY_REQUEST_TIMEOUT", "SVGM_REQUEST_TIMEOUT"),
     )
+    http_proxy_url: str | None = Field(default=None, alias="HTTP_PROXY_URL")
     generation_timeout_seconds: float = Field(
         default=300.0,
         validation_alias=AliasChoices("SVGM_PROXY_GENERATE_TIMEOUT", "SVGM_GENERATE_TIMEOUT"),
@@ -162,20 +163,6 @@ class Settings(BaseSettings):
             "SVGM_ZERO_BALANCE_REFRESH_INTERVAL_SECONDS",
             "SVGM_PROXY_LOW_BALANCE_REFRESH_INTERVAL_SECONDS",
             "SVGM_LOW_BALANCE_REFRESH_INTERVAL_SECONDS",
-        ),
-    )
-    account_acquire_poll_interval_seconds: float = Field(
-        default=2.0,
-        validation_alias=AliasChoices(
-            "SVGM_PROXY_ACCOUNT_ACQUIRE_POLL_INTERVAL_SECONDS",
-            "SVGM_ACCOUNT_ACQUIRE_POLL_INTERVAL_SECONDS",
-        ),
-    )
-    zero_balance_refresh_interval_seconds: float = Field(
-        default=90000.0,
-        validation_alias=AliasChoices(
-            "SVGM_PROXY_ZERO_BALANCE_REFRESH_INTERVAL_SECONDS",
-            "SVGM_ZERO_BALANCE_REFRESH_INTERVAL_SECONDS",
         ),
     )
 

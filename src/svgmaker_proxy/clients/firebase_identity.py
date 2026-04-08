@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from svgmaker_proxy.clients.http import build_httpx_async_client
 from svgmaker_proxy.core.config import Settings, get_settings
 
 
@@ -56,6 +57,7 @@ class FirebaseIdentityClient:
     ) -> None:
         self.settings = settings or get_settings()
         self._http_client = http_client
+        self._owned_http_client: httpx.AsyncClient | None = None
 
     async def sign_up(self, email: str, password: str) -> FirebaseAuthTokens:
         payload = {
@@ -158,7 +160,18 @@ class FirebaseIdentityClient:
     def _client(self) -> httpx.AsyncClient:
         if self._http_client is not None:
             return self._http_client
-        return httpx.AsyncClient(timeout=self.settings.request_timeout_seconds)
+        if self._owned_http_client is None:
+            self._owned_http_client = build_httpx_async_client(
+                self.settings,
+                timeout=self.settings.request_timeout_seconds,
+            )
+        return self._owned_http_client
+
+    async def aclose(self) -> None:
+        if self._owned_http_client is None:
+            return
+        await self._owned_http_client.aclose()
+        self._owned_http_client = None
 
     def _identity_url(self, endpoint: str) -> str:
         return f"https://identitytoolkit.googleapis.com/v1/{endpoint}?key={self.settings.firebase_api_key}"

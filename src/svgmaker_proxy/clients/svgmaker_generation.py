@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from svgmaker_proxy.clients.http import build_httpx_async_client
 from svgmaker_proxy.clients.svgmaker_auth import SvgmakerSession
 from svgmaker_proxy.core.config import Settings, get_settings
 from svgmaker_proxy.models.generation import SvgmakerEditRequest, SvgmakerGenerateRequest
@@ -79,7 +80,7 @@ class SvgmakerGenerationClient:
         response.raise_for_status()
         async for line in response.aiter_lines():
             raw = line.strip()
-            if not raw:
+            if not raw or not raw.startswith("data:"):
                 continue
             yield self._parse_sse_payload(raw)
 
@@ -89,9 +90,9 @@ class SvgmakerGenerationClient:
         *,
         operation_name: str,
     ) -> dict[str, Any]:
-        final_payload: dict[str, Any] | None = None
+        saw_event = False
         async for event in events:
-            final_payload = event.payload
+            saw_event = True
             if event.status == "complete":
                 logger.info(
                     "%s completed generation_id=%s credit_cost=%s svg_url=%s",
@@ -103,15 +104,16 @@ class SvgmakerGenerationClient:
                 return event.payload
             if event.status == "error":
                 raise SvgmakerGenerationError(str(event.payload))
-        if final_payload is None:
+        if not saw_event:
             raise SvgmakerGenerationError(f"{operation_name} stream returned no events")
-        return final_payload
+        raise SvgmakerGenerationError(f"{operation_name} stream ended before completion")
 
     def _build_edit_request(
         self,
         request: SvgmakerEditRequest,
     ) -> tuple[bool, dict[str, Any], dict[str, tuple[str, bytes, str]] | None]:
-        if request.source_svg_text is not None:
+        source_svg_text = request.source_svg_text
+        if source_svg_text and source_svg_text.strip():
             payload = {
                 "prompt": request.prompt,
                 "quality": request.quality,
@@ -120,7 +122,7 @@ class SvgmakerGenerationClient:
                 "stream": request.stream,
                 "base64Png": False,
                 "svgText": request.svg_text,
-                "image": request.source_svg_text,
+                "image": source_svg_text,
             }
             return True, payload, None
 
@@ -149,7 +151,7 @@ class SvgmakerGenerationClient:
     ) -> AsyncIterator[SvgmakerGenerationEvent]:
         use_json, payload, files = self._build_edit_request(request)
         headers = self._json_headers(session) if use_json else self._base_headers(session)
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with build_httpx_async_client(self.settings, timeout=self._timeout) as client:
             request_kwargs: dict[str, Any]
             if use_json:
                 request_kwargs = {"json": payload}
@@ -198,7 +200,7 @@ class SvgmakerGenerationClient:
             request.aspect_ratio,
             request.background,
         )
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with build_httpx_async_client(self.settings, timeout=self._timeout) as client:
             async with client.stream(
                 "POST",
                 f"{self.settings.svgmaker_origin}/api/generate",

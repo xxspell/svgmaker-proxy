@@ -1,0 +1,11 @@
+from svgmaker_proxy.core.config import Settings
+
+
+def test_http_proxy_url_from_env_name() -> None:
+    settings = Settings(HTTP_PROXY_URL="http://127.0.0.1:8080", _env_file=None)
+    assert settings.http_proxy_url == "http://127.0.0.1:8080"
+
+
+def test_http_proxy_url_defaults_to_none() -> None:
+    settings = Settings(_env_file=None)
+    assert settings.http_proxy_url is None
