@@ -214,6 +214,15 @@ class SvgmakerGenerationClient:
         session: SvgmakerSession,
         request: SvgmakerEditRequest,
     ) -> dict[str, Any]:
+        logger.info(
+            "Starting SVGMaker edit request prompt=%r stream_mode=%s quality=%s "
+            "aspect_ratio=%s background=%s",
+            request.prompt,
+            "enabled" if self.settings.stream_enabled else "disabled",
+            request.quality,
+            request.aspect_ratio,
+            request.background,
+        )
         if not self.settings.stream_enabled:
             return await self._edit_non_stream(session, request)
         return await self._consume_to_completion(
@@ -237,14 +246,6 @@ class SvgmakerGenerationClient:
             "svgText": request.svg_text,
             "styleParams": request.style_params,
         }
-        logger.info(
-            "Starting SVGMaker generation stream prompt=%r quality=%s "
-            "aspect_ratio=%s background=%s",
-            request.prompt,
-            request.quality,
-            request.aspect_ratio,
-            request.background,
-        )
         async with build_httpx_async_client(self.settings, timeout=self._timeout) as client:
             async with client.stream(
                 "POST",
@@ -302,6 +303,15 @@ class SvgmakerGenerationClient:
         session: SvgmakerSession,
         request: SvgmakerGenerateRequest,
     ) -> dict[str, Any]:
+        logger.info(
+            "Starting SVGMaker generation request prompt=%r stream_mode=%s quality=%s "
+            "aspect_ratio=%s background=%s",
+            request.prompt,
+            "enabled" if self.settings.stream_enabled else "disabled",
+            request.quality,
+            request.aspect_ratio,
+            request.background,
+        )
         if not self.settings.stream_enabled:
             return await self._generate_non_stream(session, request)
         return await self._consume_to_completion(

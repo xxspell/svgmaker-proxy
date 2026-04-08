@@ -190,3 +190,52 @@ async def test_edit_non_stream_raises_on_error_status(monkeypatch) -> None:  # t
             session,
             SvgmakerEditRequest(prompt="tweak logo", source_svg_text="<svg />"),
         )
+
+
+@pytest.mark.asyncio
+async def test_generate_non_stream_raises_on_non_dict_json(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    settings = Settings(_env_file=None, SVGM_STREAM_ENABLED=False)
+    fake_http_client = _FakeGenerationHttpClient(_FakeJsonResponse(["bad"]))
+
+    monkeypatch.setattr(
+        svgmaker_generation,
+        "build_httpx_async_client",
+        lambda settings_arg, timeout: fake_http_client,
+    )
+
+    client = SvgmakerGenerationClient(settings=settings)
+    session = SvgmakerSession(
+        auth_token_id="id",
+        auth_token_refresh="refresh",
+        auth_token_sig="sig",
+        bearer_token="bearer",
+    )
+
+    with pytest.raises(SvgmakerGenerationError, match="not a JSON object"):
+        await client.generate_to_completion(session, SvgmakerGenerateRequest(prompt="cat"))
+
+
+@pytest.mark.asyncio
+async def test_edit_non_stream_raises_on_non_dict_json(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    settings = Settings(_env_file=None, SVGM_STREAM_ENABLED=False)
+    fake_http_client = _FakeGenerationHttpClient(_FakeJsonResponse(["bad"]))
+
+    monkeypatch.setattr(
+        svgmaker_generation,
+        "build_httpx_async_client",
+        lambda settings_arg, timeout: fake_http_client,
+    )
+
+    client = SvgmakerGenerationClient(settings=settings)
+    session = SvgmakerSession(
+        auth_token_id="id",
+        auth_token_refresh="refresh",
+        auth_token_sig="sig",
+        bearer_token="bearer",
+    )
+
+    with pytest.raises(SvgmakerGenerationError, match="not a JSON object"):
+        await client.edit_to_completion(
+            session,
+            SvgmakerEditRequest(prompt="tweak logo", source_svg_text="<svg />"),
+        )
