@@ -210,11 +210,48 @@ class SvgmakerGenerationClient:
                 async for event in self._stream_response(response):
                     yield event
 
+    async def _generate_non_stream(
+        self,
+        session: SvgmakerSession,
+        request: SvgmakerGenerateRequest,
+    ) -> dict[str, Any]:
+        headers = self._json_headers(session)
+        payload = {
+            "prompt": request.prompt,
+            "quality": request.quality,
+            "aspectRatio": request.aspect_ratio,
+            "background": request.background,
+            "stream": False,
+            "base64Png": request.base64_png,
+            "svgText": request.svg_text,
+            "styleParams": request.style_params,
+        }
+        async with build_httpx_async_client(self.settings, timeout=self._timeout) as client:
+            response = await client.post(
+                f"{self.settings.svgmaker_origin}/api/generate",
+                headers=headers,
+                json=payload,
+            )
+            response.raise_for_status()
+            try:
+                response_payload = response.json()
+            except ValueError as exc:
+                raise SvgmakerGenerationError(
+                    "Generation non-stream response is not a JSON object"
+                ) from exc
+            if not isinstance(response_payload, dict):
+                raise SvgmakerGenerationError(
+                    "Generation non-stream response is not a JSON object"
+                )
+            return response_payload
+
     async def generate_to_completion(
         self,
         session: SvgmakerSession,
         request: SvgmakerGenerateRequest,
     ) -> dict[str, Any]:
+        if not getattr(self.settings, "stream_enabled", True):
+            return await self._generate_non_stream(session, request)
         return await self._consume_to_completion(
             self.stream_generate(session, request),
             operation_name="Generation",
