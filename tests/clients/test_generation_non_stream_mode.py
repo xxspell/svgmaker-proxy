@@ -8,7 +8,7 @@ from svgmaker_proxy.clients import svgmaker_generation
 from svgmaker_proxy.clients.svgmaker_auth import SvgmakerSession
 from svgmaker_proxy.clients.svgmaker_generation import SvgmakerGenerationClient, SvgmakerGenerationError
 from svgmaker_proxy.core.config import Settings
-from svgmaker_proxy.models.generation import SvgmakerGenerateRequest
+from svgmaker_proxy.models.generation import SvgmakerEditRequest, SvgmakerGenerateRequest
 
 
 class _FakeJsonResponse:
@@ -73,6 +73,47 @@ async def test_generate_to_completion_uses_json_when_stream_disabled(monkeypatch
     call = fake_http_client.post_calls[0]
     assert call["url"].endswith("/api/generate")
     assert call["json"]["stream"] is False
+
+
+@pytest.mark.asyncio
+async def test_edit_to_completion_uses_json_when_stream_disabled(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    settings = Settings(_env_file=None, SVGM_STREAM_ENABLED=False)
+
+    expected_payload = {
+        "status": "complete",
+        "generationId": "e-123",
+        "svgUrl": "https://example.com/e-123.svg",
+    }
+    fake_http_client = _FakeGenerationHttpClient(_FakeJsonResponse(expected_payload))
+
+    monkeypatch.setattr(
+        svgmaker_generation,
+        "build_httpx_async_client",
+        lambda settings_arg, timeout: fake_http_client,
+    )
+
+    client = SvgmakerGenerationClient(settings=settings)
+    session = SvgmakerSession(
+        auth_token_id="id",
+        auth_token_refresh="refresh",
+        auth_token_sig="sig",
+        bearer_token="bearer",
+    )
+    request = SvgmakerEditRequest(
+        prompt="tweak logo",
+        stream=True,
+        source_svg_text="<svg viewBox='0 0 10 10'></svg>",
+    )
+
+    result = await client.edit_to_completion(session, request)
+
+    assert result == expected_payload
+    assert fake_http_client.stream_calls == []
+    assert len(fake_http_client.post_calls) == 1
+    call = fake_http_client.post_calls[0]
+    assert call["url"].endswith("/api/edit")
+    assert call["json"]["stream"] is False
+    assert call["json"]["image"] == "<svg viewBox='0 0 10 10'></svg>"
 
 
 @pytest.mark.asyncio

@@ -166,11 +166,56 @@ class SvgmakerGenerationClient:
                 async for event in self._stream_response(response):
                     yield event
 
+    async def _edit_non_stream(
+        self,
+        session: SvgmakerSession,
+        request: SvgmakerEditRequest,
+    ) -> dict[str, Any]:
+        source_svg_text = request.source_svg_text
+        if not (source_svg_text and source_svg_text.strip()):
+            raise SvgmakerGenerationError("Edit non-stream mode requires source_svg_text")
+
+        headers = self._json_headers(session)
+        payload = {
+            "prompt": request.prompt,
+            "quality": request.quality,
+            "aspectRatio": request.aspect_ratio,
+            "background": request.background,
+            "stream": False,
+            "base64Png": False,
+            "svgText": request.svg_text,
+            "image": source_svg_text,
+        }
+
+        async with build_httpx_async_client(self.settings, timeout=self._timeout) as client:
+            response = await client.post(
+                f"{self.settings.svgmaker_origin}/api/edit",
+                headers=headers,
+                json=payload,
+            )
+            response.raise_for_status()
+            try:
+                response_payload = response.json()
+            except ValueError as exc:
+                raise SvgmakerGenerationError(
+                    "Edit non-stream response is not a JSON object"
+                ) from exc
+            if not isinstance(response_payload, dict):
+                raise SvgmakerGenerationError("Edit non-stream response is not a JSON object")
+            status = str(response_payload.get("status", "complete"))
+            if status == "error":
+                raise SvgmakerGenerationError(str(response_payload))
+            if status != "complete":
+                raise SvgmakerGenerationError("Edit non-stream response ended before completion")
+            return response_payload
+
     async def edit_to_completion(
         self,
         session: SvgmakerSession,
         request: SvgmakerEditRequest,
     ) -> dict[str, Any]:
+        if not self.settings.stream_enabled:
+            return await self._edit_non_stream(session, request)
         return await self._consume_to_completion(
             self.stream_edit(session, request),
             operation_name="Edit",
