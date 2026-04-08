@@ -243,6 +243,13 @@ class SvgmakerGenerationClient:
                 raise SvgmakerGenerationError(
                     "Generation non-stream response is not a JSON object"
                 )
+            status = str(response_payload.get("status", "complete"))
+            if status == "error":
+                raise SvgmakerGenerationError(str(response_payload))
+            if status != "complete":
+                raise SvgmakerGenerationError(
+                    "Generation non-stream response ended before completion"
+                )
             return response_payload
 
     async def generate_to_completion(

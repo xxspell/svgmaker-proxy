@@ -6,7 +6,7 @@ import pytest
 
 from svgmaker_proxy.clients import svgmaker_generation
 from svgmaker_proxy.clients.svgmaker_auth import SvgmakerSession
-from svgmaker_proxy.clients.svgmaker_generation import SvgmakerGenerationClient
+from svgmaker_proxy.clients.svgmaker_generation import SvgmakerGenerationClient, SvgmakerGenerationError
 from svgmaker_proxy.core.config import Settings
 from svgmaker_proxy.models.generation import SvgmakerGenerateRequest
 
@@ -73,3 +73,28 @@ async def test_generate_to_completion_uses_json_when_stream_disabled(monkeypatch
     call = fake_http_client.post_calls[0]
     assert call["url"].endswith("/api/generate")
     assert call["json"]["stream"] is False
+
+
+@pytest.mark.asyncio
+async def test_generate_non_stream_raises_on_error_status(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    settings = Settings(_env_file=None, SVGM_STREAM_ENABLED=False)
+    fake_http_client = _FakeGenerationHttpClient(
+        _FakeJsonResponse({"status": "error", "message": "no credits"})
+    )
+
+    monkeypatch.setattr(
+        svgmaker_generation,
+        "build_httpx_async_client",
+        lambda settings_arg, timeout: fake_http_client,
+    )
+
+    client = SvgmakerGenerationClient(settings=settings)
+    session = SvgmakerSession(
+        auth_token_id="id",
+        auth_token_refresh="refresh",
+        auth_token_sig="sig",
+        bearer_token="bearer",
+    )
+
+    with pytest.raises(SvgmakerGenerationError):
+        await client.generate_to_completion(session, SvgmakerGenerateRequest(prompt="cat"))
