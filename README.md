@@ -536,6 +536,10 @@ SVGM_PROXY_ZERO_BALANCE_REFRESH_INTERVAL_SECONDS=90000
 
 SVGM_PROXY_REQUEST_TIMEOUT=60
 SVGM_PROXY_GENERATE_TIMEOUT=300
+# Stream mode for /api/generate and /api/edit calls.
+# true  - use SSE stream mode (default)
+# false - use regular JSON response mode (recommended with unstable proxies)
+SVGM_STREAM_ENABLED=true
 # HTTP_PROXY_URL examples:
 # HTTP_PROXY_URL=http://host:port
 # HTTP_PROXY_URL=http://user:pass@host:port
