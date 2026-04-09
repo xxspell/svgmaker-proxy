@@ -31,6 +31,18 @@ class SvgmakerGenerationClient:
         self.settings = settings or get_settings()
         self._timeout = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0)
 
+    def _payload_preview(self, payload: dict[str, Any]) -> str:
+        preview: dict[str, Any] = {}
+        for key, value in payload.items():
+            if key == "base64Png":
+                preview[key] = "<omitted>"
+                continue
+            if isinstance(value, str) and len(value) > 300:
+                preview[key] = f"{value[:300]}...<truncated:{len(value)}>"
+                continue
+            preview[key] = value
+        return repr(preview)
+
     def _base_headers(self, session: SvgmakerSession) -> dict[str, str]:
         cookie = "; ".join(
             [
@@ -202,13 +214,17 @@ class SvgmakerGenerationClient:
                 ) from exc
             if not isinstance(response_payload, dict):
                 raise SvgmakerGenerationError("Edit non-stream response is not a JSON object")
-            status = str(response_payload.get("status", "unknown"))
+            status_raw = response_payload.get("status")
+            status = str(status_raw) if status_raw is not None else None
             if status == "error":
-                raise SvgmakerGenerationError(str(response_payload))
-            if status != "complete":
+                raise SvgmakerGenerationError(
+                    "Edit non-stream response returned error "
+                    f"response_payload={self._payload_preview(response_payload)}"
+                )
+            if status is not None and status != "complete":
                 raise SvgmakerGenerationError(
                     "Edit non-stream response ended before completion "
-                    f"response_payload={response_payload!r}"
+                    f"response_payload={self._payload_preview(response_payload)}"
                 )
             return response_payload
 
@@ -292,13 +308,26 @@ class SvgmakerGenerationClient:
                 raise SvgmakerGenerationError(
                     "Generation non-stream response is not a JSON object"
                 )
-            status = str(response_payload.get("status", "unknown"))
+            status_raw = response_payload.get("status")
+            status = str(status_raw) if status_raw is not None else None
             if status == "error":
-                raise SvgmakerGenerationError(str(response_payload))
-            if status != "complete":
+                raise SvgmakerGenerationError(
+                    "Generation non-stream response returned error "
+                    f"response_payload={self._payload_preview(response_payload)}"
+                )
+            if status is None and (
+                response_payload.get("svgUrl") or response_payload.get("generationId")
+            ):
+                return response_payload
+            if status is not None and status != "complete":
                 raise SvgmakerGenerationError(
                     "Generation non-stream response ended before completion "
-                    f"response_payload={response_payload!r}"
+                    f"response_payload={self._payload_preview(response_payload)}"
+                )
+            if status is None:
+                raise SvgmakerGenerationError(
+                    "Generation non-stream response ended before completion "
+                    f"response_payload={self._payload_preview(response_payload)}"
                 )
             return response_payload
 

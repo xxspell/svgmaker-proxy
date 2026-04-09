@@ -142,9 +142,14 @@ async def test_generate_non_stream_raises_on_error_status(monkeypatch) -> None: 
 
 
 @pytest.mark.asyncio
-async def test_generate_non_stream_raises_on_missing_status(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+async def test_generate_non_stream_accepts_success_payload_without_status(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     settings = Settings(_env_file=None, SVGM_STREAM_ENABLED=False)
-    fake_http_client = _FakeGenerationHttpClient(_FakeJsonResponse({"generationId": "g-123"}))
+    success_payload = {
+        "generationId": "g-123",
+        "svgUrl": "https://example.com/g-123.svg",
+        "creditCost": 3,
+    }
+    fake_http_client = _FakeGenerationHttpClient(_FakeJsonResponse(success_payload))
 
     monkeypatch.setattr(
         svgmaker_generation,
@@ -160,11 +165,39 @@ async def test_generate_non_stream_raises_on_missing_status(monkeypatch) -> None
         bearer_token="bearer",
     )
 
-    with pytest.raises(
-        SvgmakerGenerationError,
-        match=r"ended before completion.*response_payload=\{'generationId': 'g-123'\}",
-    ):
+    result = await client.generate_to_completion(session, SvgmakerGenerateRequest(prompt="cat"))
+
+    assert result == success_payload
+
+
+@pytest.mark.asyncio
+async def test_generate_non_stream_missing_status_error_is_short(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    settings = Settings(_env_file=None, SVGM_STREAM_ENABLED=False)
+    huge_payload = {
+        "base64Png": "x" * 6000,
+    }
+    fake_http_client = _FakeGenerationHttpClient(_FakeJsonResponse(huge_payload))
+
+    monkeypatch.setattr(
+        svgmaker_generation,
+        "build_httpx_async_client",
+        lambda settings_arg, timeout: fake_http_client,
+    )
+
+    client = SvgmakerGenerationClient(settings=settings)
+    session = SvgmakerSession(
+        auth_token_id="id",
+        auth_token_refresh="refresh",
+        auth_token_sig="sig",
+        bearer_token="bearer",
+    )
+
+    with pytest.raises(SvgmakerGenerationError) as exc_info:
         await client.generate_to_completion(session, SvgmakerGenerateRequest(prompt="cat"))
+
+    assert "ended before completion" in str(exc_info.value)
+    assert "<omitted>" in str(exc_info.value)
+    assert len(str(exc_info.value)) < 1000
 
 
 @pytest.mark.asyncio
