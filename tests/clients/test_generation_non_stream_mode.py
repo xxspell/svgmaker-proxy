@@ -160,7 +160,10 @@ async def test_generate_non_stream_raises_on_missing_status(monkeypatch) -> None
         bearer_token="bearer",
     )
 
-    with pytest.raises(SvgmakerGenerationError, match="ended before completion"):
+    with pytest.raises(
+        SvgmakerGenerationError,
+        match=r"ended before completion.*response_payload=\{'generationId': 'g-123'\}",
+    ):
         await client.generate_to_completion(session, SvgmakerGenerateRequest(prompt="cat"))
 
 

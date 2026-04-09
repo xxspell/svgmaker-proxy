@@ -206,7 +206,10 @@ class SvgmakerGenerationClient:
             if status == "error":
                 raise SvgmakerGenerationError(str(response_payload))
             if status != "complete":
-                raise SvgmakerGenerationError("Edit non-stream response ended before completion")
+                raise SvgmakerGenerationError(
+                    "Edit non-stream response ended before completion "
+                    f"response_payload={response_payload!r}"
+                )
             return response_payload
 
     async def edit_to_completion(
@@ -294,7 +297,8 @@ class SvgmakerGenerationClient:
                 raise SvgmakerGenerationError(str(response_payload))
             if status != "complete":
                 raise SvgmakerGenerationError(
-                    "Generation non-stream response ended before completion"
+                    "Generation non-stream response ended before completion "
+                    f"response_payload={response_payload!r}"
                 )
             return response_payload
 
